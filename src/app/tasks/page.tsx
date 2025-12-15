@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import AuthGate from "../../components/AuthGate";
 import type { Task, TaskStatus } from "../../lib/types";
 import { useTaskStore } from "../../hooks/useTaskStore";
 
@@ -191,7 +192,8 @@ const TasksPage = () => {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
+    <AuthGate>
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-col gap-3">
           <Link
@@ -381,6 +383,7 @@ const TasksPage = () => {
         </div>
       ) : null}
     </main>
+    </AuthGate>
   );
 };
 

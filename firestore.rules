@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsTask(taskId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/tasks/$(taskId)).data.userId == request.auth.uid;
+    }
+
+    match /tasks/{taskId} {
+      allow read, create, update, delete: if signedIn() &&
+        (
+          // For create/update we rely on the incoming payload.
+          (request.method in ['create', 'update'] &&
+            request.resource.data.userId == request.auth.uid) ||
+          // For read/delete we can look at the stored document.
+          (request.method in ['get', 'list', 'delete'] &&
+            resource.data.userId == request.auth.uid)
+        );
+    }
+
+    match /steps/{stepId} {
+      allow read, create, update, delete: if signedIn() && (
+        // Evaluate ownership from the new payload if present, otherwise from stored data.
+        (request.resource != null && ownsTask(request.resource.data.taskId)) ||
+          (resource != null && ownsTask(resource.data.taskId))
+      );
+    }
+
+    match /workLogs/{logId} {
+      allow read, create, update, delete: if signedIn() && (
+        (request.resource != null && ownsTask(request.resource.data.taskId)) ||
+          (resource != null && ownsTask(resource.data.taskId))
+      );
+    }
+  }
+}

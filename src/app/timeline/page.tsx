@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import AuthGate from "../../components/AuthGate";
 import { useTaskStore } from "../../hooks/useTaskStore";
 import type { WorkLog } from "../../lib/types";
 
@@ -95,7 +96,8 @@ const TimelinePage = () => {
   }, [workLogs, selectedMonth, selectedYear]);
 
   return (
-    <main className="mx-auto w-full max-w-4xl p-6">
+    <AuthGate>
+      <main className="mx-auto w-full max-w-4xl p-6">
       <header className="mb-6 space-y-3">
         <Link
           href="/"
@@ -179,6 +181,7 @@ const TimelinePage = () => {
         </div>
       )}
     </main>
+    </AuthGate>
   );
 };
 

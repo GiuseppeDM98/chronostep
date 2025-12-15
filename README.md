@@ -19,13 +19,23 @@ It focuses on **clarity, tracking, and execution** rather than planning heavy wo
 
 ---
 
+## ✨ Latest updates
+
+- Step cards now support optional descriptions so each (sub)step can carry extra context.
+- Steps and substeps can be edited inline without recreating them.
+- Work Logs on the task detail page now include edit and delete controls.
+- Added a custom Chronostep favicon for easier recognition in browser tabs.
+- Migrated persistence and authentication to Firebase (Firestore + Firebase Auth).
+
+---
+
 ## 🏛 Architecture Overview
 
 Chronostep is implemented using:
 
 - **Next.js (App Router, TypeScript)**  
-- **SQLite** as the persistence layer  
-- **Prisma ORM** for database access  
+- **Firebase Authentication** to protect each workspace  
+- **Firebase Firestore** as the persistence layer  
 - **Tailwind CSS** for styling  
 - Optional progressive enhancements like analytics and calendar sync
 
@@ -46,7 +56,7 @@ Contains metadata such as status, priority, tags, and deadlines.
 
 ### **Step**
 A concrete action required to complete a task.  
-Steps can recursively contain **substeps**.
+Steps can recursively contain **substeps**. Each entry can also store an optional description to capture guidance or acceptance criteria.
 
 ### **Work Log**
 A timestamped entry describing what happened at a moment in time.  
@@ -71,8 +81,9 @@ Displays all tasks with filters:
 ### **Task Detail (`/tasks/[id]`)**
 Includes:
 - Task metadata
-- Steps and nested substeps
+- Steps and nested substeps with their descriptions
 - Work log timeline
+- Inline controls to edit/delete steps, substeps, and work logs
 - Forms to add/update everything
 
 ### **Timeline (`/timeline`)**
@@ -86,16 +97,18 @@ Reserved for future improvements:
 
 ---
 
-## 🔧 Database Schema (Prisma + SQLite)
+## 🔧 Data Model (Firebase Firestore)
 
-Chronostep uses a structured relational schema designed around:
+Chronostep stores everything inside a Firebase project:
 
-- `Task`
-- `Step` (with recursive self-relation)
-- `WorkLog`
-- Enums for status, priority, and log types
+- `tasks` collection  
+  Stores metadata, tags, and due dates for every task document.
+- `steps` collection  
+  Holds the ordered steps/substeps linked by `taskId` and `parentStepId`.
+- `workLogs` collection  
+  Keeps timestamped notes tied to either a task or a particular step.
 
-The database is local by default and can later be swapped for Postgres/Supabase if multi-device sync is needed.
+Documents are materialized in the UI through the strongly typed models in `src/lib/types.ts`. Security rules can scope documents per user when multi-tenant support is introduced.
 
 ---
 
@@ -116,12 +129,11 @@ The database is local by default and can later be swapped for Postgres/Supabase 
    ```bash
    npm install
    ```
-
-2. Set up the SQLite database  
-   ```bash
-   npx prisma migrate dev
-   ```
-
+2. Configure Firebase  
+   - Create a Firebase project with Authentication (Email/Password) and Firestore enabled.  
+   - Register a Web App entry to obtain API keys for the client SDK.  
+   - Generate a service account key and copy `project_id`, `client_email`, and `private_key`.  
+   - Fill the `.env` file with the values (remember to escape newlines in the private key using `\n`).
 3. Run the dev server  
    ```bash
    npm run dev

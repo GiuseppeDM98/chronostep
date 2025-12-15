@@ -27,6 +27,7 @@ export type WorkLogType = "start" | "stop" | "note";
  */
 export interface Task {
   id: EntityId;
+  userId: EntityId;
   title: string;
   description?: string;
   status: TaskStatus;
@@ -42,9 +43,11 @@ export interface Task {
  */
 export interface Step {
   id: EntityId;
+  userId: EntityId;
   taskId: EntityId;
   parentStepId?: EntityId;
   title: string;
+  description?: string;
   status: StepStatus;
   order: number;
   createdAt: IsoDateTimeString;
@@ -56,6 +59,7 @@ export interface Step {
  */
 export interface WorkLog {
   id: EntityId;
+  userId: EntityId;
   taskId: EntityId;
   stepId?: EntityId;
   message?: string;
@@ -63,3 +67,18 @@ export interface WorkLog {
   timestamp: IsoDateTimeString;
   durationMinutes?: number;
 }
+
+export type TaskStoreSnapshot = {
+  tasks: Task[];
+  steps: Step[];
+  workLogs: WorkLog[];
+};
+
+export type CreateTaskInput = Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">;
+export type UpdateTaskInput = Partial<Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">>;
+
+export type CreateStepInput = Omit<Step, "id" | "createdAt" | "updatedAt" | "userId">;
+export type UpdateStepInput = Partial<Omit<Step, "id" | "createdAt" | "updatedAt" | "userId">>;
+
+export type CreateWorkLogInput = Omit<WorkLog, "id" | "createdAt" | "updatedAt" | "userId">;
+export type UpdateWorkLogInput = Partial<Omit<WorkLog, "id" | "createdAt" | "updatedAt" | "userId">>;

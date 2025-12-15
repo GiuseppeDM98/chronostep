@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import AuthGate from "../../../components/AuthGate";
 import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 import { useTaskStore } from "../../../hooks/useTaskStore";
 
@@ -69,10 +70,12 @@ const StepTree = ({
   nodes,
   onStatusChange,
   onDelete,
+  onEdit,
 }: {
   nodes: StepNode[];
   onStatusChange: (id: string, status: StepStatus) => void;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
 }) => (
   <ul className="space-y-3">
     {nodes.map((node) => (
@@ -80,6 +83,9 @@ const StepTree = ({
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-1">
             <p className="font-medium text-slate-900">{node.title}</p>
+            {node.description ? (
+              <p className="text-sm text-slate-600">{node.description}</p>
+            ) : null}
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <span>{STEP_STATUS_LABELS[node.status]}</span>
               <select
@@ -95,11 +101,18 @@ const StepTree = ({
               </select>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-400">#{node.order}</span>
+          <div className="flex items-center gap-3 text-xs font-medium">
+            <span className="text-slate-400">#{node.order}</span>
             <button
               type="button"
-              className="text-xs text-rose-600 hover:text-rose-700"
+              className="text-sky-700 hover:text-sky-900"
+              onClick={() => onEdit(node.id)}
+            >
+              Modifica
+            </button>
+            <button
+              type="button"
+              className="text-rose-600 hover:text-rose-700"
               onClick={() => onDelete(node.id)}
             >
               Elimina
@@ -108,7 +121,12 @@ const StepTree = ({
         </div>
         {node.children.length > 0 ? (
           <div className="mt-3 border-l-2 border-slate-100 pl-4">
-            <StepTree nodes={node.children} onStatusChange={onStatusChange} onDelete={onDelete} />
+            <StepTree
+              nodes={node.children}
+              onStatusChange={onStatusChange}
+              onDelete={onDelete}
+              onEdit={onEdit}
+            />
           </div>
         ) : null}
       </li>
@@ -127,8 +145,10 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     createWorkLog,
     updateStep,
     updateTask,
+    updateWorkLog,
     deleteStep,
     deleteTask,
+    deleteWorkLog,
   } = useTaskStore();
 
   const task = tasks.find((candidate) => candidate.id === params.id);
@@ -143,11 +163,20 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
 
   const [newStepTitle, setNewStepTitle] = useState("");
   const [newStepParentId, setNewStepParentId] = useState("");
+  const [newStepDescription, setNewStepDescription] = useState("");
   const [newStepStatus, setNewStepStatus] = useState<StepStatus>("todo");
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [editingStepTitle, setEditingStepTitle] = useState("");
+  const [editingStepDescription, setEditingStepDescription] = useState("");
+  const [editingStepStatus, setEditingStepStatus] = useState<StepStatus>("todo");
 
   const [newLogType, setNewLogType] = useState<WorkLogType>("note");
   const [newLogMessage, setNewLogMessage] = useState("");
   const [newLogStepId, setNewLogStepId] = useState("");
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editingLogType, setEditingLogType] = useState<WorkLogType>("note");
+  const [editingLogMessage, setEditingLogMessage] = useState("");
+  const [editingLogStepId, setEditingLogStepId] = useState("");
 
   const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
 
@@ -162,19 +191,49 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     [taskLogs],
   );
 
+  const resetStepEditForm = () => {
+    setEditingStepId(null);
+    setEditingStepTitle("");
+    setEditingStepDescription("");
+    setEditingStepStatus("todo");
+  };
+
+  const resetWorkLogEditForm = () => {
+    setEditingLogId(null);
+    setEditingLogType("note");
+    setEditingLogMessage("");
+    setEditingLogStepId("");
+  };
+
+  useEffect(() => {
+    if (editingStepId && !taskSteps.some((step) => step.id === editingStepId)) {
+      resetStepEditForm();
+    }
+  }, [editingStepId, taskSteps]);
+
+  useEffect(() => {
+    if (editingLogId && !taskLogs.some((log) => log.id === editingLogId)) {
+      resetWorkLogEditForm();
+    }
+  }, [editingLogId, taskLogs]);
+
   if (!isHydrated) {
     return (
-      <main className="mx-auto max-w-4xl p-6">
-        <p className="text-slate-600">Caricamento task...</p>
-      </main>
+      <AuthGate>
+        <main className="mx-auto max-w-4xl p-6">
+          <p className="text-slate-600">Caricamento task...</p>
+        </main>
+      </AuthGate>
     );
   }
 
   if (!task) {
     return (
-      <main className="mx-auto max-w-4xl p-6">
-        <p className="text-slate-600">Task non trovata.</p>
-      </main>
+      <AuthGate>
+        <main className="mx-auto max-w-4xl p-6">
+          <p className="text-slate-600">Task non trovata.</p>
+        </main>
+      </AuthGate>
     );
   }
 
@@ -192,13 +251,36 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       taskId: task.id,
       parentStepId: parentId,
       title: newStepTitle.trim(),
+      description: newStepDescription.trim() || undefined,
       status: newStepStatus,
       order: nextOrder,
     });
 
     setNewStepTitle("");
     setNewStepParentId("");
+    setNewStepDescription("");
     setNewStepStatus("todo");
+  };
+
+  const startEditingStep = (stepId: string) => {
+    const step = taskSteps.find((candidate) => candidate.id === stepId);
+    if (!step) return;
+    setEditingStepId(stepId);
+    setEditingStepTitle(step.title);
+    setEditingStepDescription(step.description ?? "");
+    setEditingStepStatus(step.status);
+  };
+
+  const handleEditStepSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingStepId || !editingStepTitle.trim()) return;
+
+    await updateStep(editingStepId, {
+      title: editingStepTitle.trim(),
+      description: editingStepDescription.trim() || undefined,
+      status: editingStepStatus,
+    });
+    resetStepEditForm();
   };
 
   const handleAddWorkLog = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -218,8 +300,37 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setNewLogType("note");
   };
 
+  const startEditingLog = (logId: string) => {
+    const log = taskLogs.find((candidate) => candidate.id === logId);
+    if (!log) return;
+    setEditingLogId(logId);
+    setEditingLogType(log.type);
+    setEditingLogMessage(log.message ?? "");
+    setEditingLogStepId(log.stepId ?? "");
+  };
+
+  const handleEditLogSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingLogId) return;
+    await updateWorkLog(editingLogId, {
+      type: editingLogType,
+      message: editingLogMessage.trim() || undefined,
+      stepId: editingLogStepId || undefined,
+    });
+    resetWorkLogEditForm();
+  };
+
+  const handleDeleteLog = async (logId: string) => {
+    if (!confirm("Eliminare questo WorkLog?")) return;
+    await deleteWorkLog(logId);
+    if (editingLogId === logId) {
+      resetWorkLogEditForm();
+    }
+  };
+
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
+    <AuthGate>
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
       <div className="flex flex-wrap gap-3">
         <Link
           href="/"
@@ -317,9 +428,58 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                     void deleteStep(id);
                   }
                 }}
+                onEdit={startEditingStep}
               />
             </div>
           )}
+
+          {editingStepId ? (
+            <form
+              className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
+              onSubmit={handleEditStepSubmit}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700">Modifica step esistente</p>
+                <button
+                  type="button"
+                  className="text-xs text-slate-500 hover:text-slate-700"
+                  onClick={resetStepEditForm}
+                >
+                  Annulla
+                </button>
+              </div>
+              <input
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={editingStepTitle}
+                onChange={(event) => setEditingStepTitle(event.target.value)}
+                placeholder="Titolo step"
+              />
+              <textarea
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                rows={3}
+                value={editingStepDescription}
+                onChange={(event) => setEditingStepDescription(event.target.value)}
+                placeholder="Descrizione step"
+              />
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={editingStepStatus}
+                onChange={(event) => setEditingStepStatus(event.target.value as StepStatus)}
+              >
+                {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Salva modifiche
+              </button>
+            </form>
+          ) : null}
 
           <form className="mt-6 space-y-3" onSubmit={handleAddStep}>
             <p className="text-sm font-medium text-slate-700">Aggiungi Step</p>
@@ -329,6 +489,13 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
               placeholder="Titolo step"
               value={newStepTitle}
               onChange={(event) => setNewStepTitle(event.target.value)}
+            />
+            <textarea
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Descrizione (facoltativa)"
+              rows={3}
+              value={newStepDescription}
+              onChange={(event) => setNewStepDescription(event.target.value)}
             />
             <div className="flex flex-col gap-3 sm:flex-row">
               <select
@@ -378,17 +545,87 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                     <span className="font-medium">{WORKLOG_TYPE_LABELS[log.type]}</span>
                     <time>{new Date(log.timestamp).toLocaleString()}</time>
                   </div>
-                  <p className="mt-2 text-sm text-slate-700">{log.message ?? "—"}</p>
+                  <p className="mt-2 text-sm text-slate-700">{log.message ?? "-"}</p>
                   {log.stepId ? (
                     <p className="mt-1 text-xs text-slate-500">
                       Riferito allo step:{" "}
                       {taskSteps.find((step) => step.id === log.stepId)?.title ?? log.stepId}
                     </p>
                   ) : null}
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold">
+                    <button
+                      type="button"
+                      className="text-sky-700 hover:text-sky-900"
+                      onClick={() => startEditingLog(log.id)}
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className="text-rose-600 hover:text-rose-700"
+                      onClick={() => handleDeleteLog(log.id)}
+                    >
+                      Elimina
+                    </button>
+                  </div>
                 </li>
               ))}
             </ol>
           )}
+
+          {editingLogId ? (
+            <form
+              className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
+              onSubmit={handleEditLogSubmit}
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700">Modifica WorkLog</p>
+                <button
+                  type="button"
+                  className="text-xs text-slate-500 hover:text-slate-700"
+                  onClick={resetWorkLogEditForm}
+                >
+                  Annulla
+                </button>
+              </div>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={editingLogType}
+                onChange={(event) => setEditingLogType(event.target.value as WorkLogType)}
+              >
+                {Object.entries(WORKLOG_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <textarea
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                rows={3}
+                value={editingLogMessage}
+                onChange={(event) => setEditingLogMessage(event.target.value)}
+                placeholder="Aggiorna la nota"
+              />
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={editingLogStepId}
+                onChange={(event) => setEditingLogStepId(event.target.value)}
+              >
+                <option value="">Nessun step</option>
+                {taskSteps.map((step) => (
+                  <option key={step.id} value={step.id}>
+                    {step.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Salva WorkLog
+              </button>
+            </form>
+          ) : null}
 
           <form className="mt-6 space-y-3" onSubmit={handleAddWorkLog}>
             <p className="text-sm font-medium text-slate-700">Aggiungi Log</p>
@@ -432,6 +669,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
         </div>
       </section>
     </main>
+    </AuthGate>
   );
 };
 

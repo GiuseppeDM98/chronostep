@@ -1,11 +1,14 @@
 import type { Step, Task, WorkLog } from "./types";
 
+const demoUserId = "mock-user";
+
 /**
  * Seed data for local development before persistence is in place.
  */
 export const tasks: Task[] = [
   {
     id: "task-chrono-setup",
+    userId: demoUserId,
     title: "Set up Chronostep workspace",
     description: "Initialize repo, configure linting, and prep mock data.",
     status: "in_progress",
@@ -17,6 +20,7 @@ export const tasks: Task[] = [
   },
   {
     id: "task-research-ux",
+    userId: demoUserId,
     title: "Research UX patterns",
     description: "Collect references for multi-step progress trackers.",
     status: "todo",
@@ -27,6 +31,7 @@ export const tasks: Task[] = [
   },
   {
     id: "task-write-devlog",
+    userId: demoUserId,
     title: "Write developer log entry",
     status: "done",
     priority: "low",
@@ -39,6 +44,7 @@ export const tasks: Task[] = [
 export const steps: Step[] = [
   {
     id: "step-init-repo",
+    userId: demoUserId,
     taskId: "task-chrono-setup",
     title: "Initialize repository",
     status: "done",
@@ -48,6 +54,7 @@ export const steps: Step[] = [
   },
   {
     id: "step-config-lint",
+    userId: demoUserId,
     taskId: "task-chrono-setup",
     title: "Configure linting",
     status: "in_progress",
@@ -57,6 +64,7 @@ export const steps: Step[] = [
   },
   {
     id: "step-populate-mock",
+    userId: demoUserId,
     taskId: "task-chrono-setup",
     parentStepId: "step-config-lint",
     title: "Populate mock data",
@@ -67,6 +75,7 @@ export const steps: Step[] = [
   },
   {
     id: "step-gather-sources",
+    userId: demoUserId,
     taskId: "task-research-ux",
     title: "Gather inspirational apps",
     status: "todo",
@@ -76,6 +85,7 @@ export const steps: Step[] = [
   },
   {
     id: "step-outline-devlog",
+    userId: demoUserId,
     taskId: "task-write-devlog",
     title: "Outline entry",
     status: "done",
@@ -85,6 +95,7 @@ export const steps: Step[] = [
   },
   {
     id: "step-polish-devlog",
+    userId: demoUserId,
     taskId: "task-write-devlog",
     title: "Polish draft and publish",
     status: "done",
@@ -97,6 +108,7 @@ export const steps: Step[] = [
 export const workLogs: WorkLog[] = [
   {
     id: "worklog-1",
+    userId: demoUserId,
     taskId: "task-chrono-setup",
     stepId: "step-init-repo",
     type: "start",
@@ -105,6 +117,7 @@ export const workLogs: WorkLog[] = [
   },
   {
     id: "worklog-2",
+    userId: demoUserId,
     taskId: "task-chrono-setup",
     stepId: "step-config-lint",
     type: "note",
@@ -113,6 +126,7 @@ export const workLogs: WorkLog[] = [
   },
   {
     id: "worklog-3",
+    userId: demoUserId,
     taskId: "task-research-ux",
     type: "note",
     timestamp: "2025-01-11T12:00:00.000Z",
@@ -120,6 +134,7 @@ export const workLogs: WorkLog[] = [
   },
   {
     id: "worklog-4",
+    userId: demoUserId,
     taskId: "task-write-devlog",
     stepId: "step-polish-devlog",
     type: "stop",
