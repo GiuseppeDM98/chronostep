@@ -6,26 +6,45 @@ service cloud.firestore {
     }
 
     function ownsResource(resourceData) {
-      return signedIn() && resourceData.userId == request.auth.uid;
+      return resourceData != null && signedIn() && resourceData.userId == request.auth.uid;
     }
 
-    function canAccess(resourceData) {
-      return resourceData != null && ownsResource(resourceData);
+    function taskOwned(taskId) {
+      return taskId != null &&
+        signedIn() &&
+        exists(/databases/$(database)/documents/tasks/$(taskId)) &&
+        get(/databases/$(database)/documents/tasks/$(taskId)).data.userId == request.auth.uid;
+    }
+
+    function stepAccessible(resourceData) {
+      return ownsResource(resourceData) ||
+        (resourceData != null && resourceData.taskId != null && taskOwned(resourceData.taskId));
+    }
+
+    function workLogAccessible(resourceData) {
+      return ownsResource(resourceData) ||
+        (resourceData != null && resourceData.taskId != null && taskOwned(resourceData.taskId));
     }
 
     match /tasks/{taskId} {
-      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
-        canAccess(resource.data);
+      allow read, create, update, delete: if signedIn() && (
+        (request.resource != null && ownsResource(request.resource.data)) ||
+        ownsResource(resource.data)
+      );
     }
 
     match /steps/{stepId} {
-      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
-        canAccess(resource.data);
+      allow read, create, update, delete: if signedIn() && (
+        (request.resource != null && stepAccessible(request.resource.data)) ||
+        stepAccessible(resource.data)
+      );
     }
 
     match /workLogs/{logId} {
-      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
-        canAccess(resource.data);
+      allow read, create, update, delete: if signedIn() && (
+        (request.resource != null && workLogAccessible(request.resource.data)) ||
+        workLogAccessible(resource.data)
+      );
     }
   }
 }

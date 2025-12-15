@@ -15,7 +15,7 @@ const HomePage = () => (
           Break work into steps, stay accountable with logs.
         </h1>
         <p className="mt-4 text-lg text-slate-600">
-          Chronostep è un diario operativo locale. Traccia task, sub-task e sessioni di lavoro senza
+          Chronostep è un diario operativo. Traccia task, sub-task e sessioni di lavoro senza
           distrazioni.
         </p>
 
