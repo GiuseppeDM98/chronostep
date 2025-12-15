@@ -5,36 +5,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function ownsTask(taskId) {
-      return signedIn() &&
-        get(/databases/$(database)/documents/tasks/$(taskId)).data.userId == request.auth.uid;
+    function ownsResource(resourceData) {
+      return signedIn() && resourceData.userId == request.auth.uid;
+    }
+
+    function canAccess(resourceData) {
+      return resourceData != null && ownsResource(resourceData);
     }
 
     match /tasks/{taskId} {
-      allow read, create, update, delete: if signedIn() &&
-        (
-          // For create/update we rely on the incoming payload.
-          (request.method in ['create', 'update'] &&
-            request.resource.data.userId == request.auth.uid) ||
-          // For read/delete we can look at the stored document.
-          (request.method in ['get', 'list', 'delete'] &&
-            resource.data.userId == request.auth.uid)
-        );
+      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
+        canAccess(resource.data);
     }
 
     match /steps/{stepId} {
-      allow read, create, update, delete: if signedIn() && (
-        // Evaluate ownership from the new payload if present, otherwise from stored data.
-        (request.resource != null && ownsTask(request.resource.data.taskId)) ||
-          (resource != null && ownsTask(resource.data.taskId))
-      );
+      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
+        canAccess(resource.data);
     }
 
     match /workLogs/{logId} {
-      allow read, create, update, delete: if signedIn() && (
-        (request.resource != null && ownsTask(request.resource.data.taskId)) ||
-          (resource != null && ownsTask(resource.data.taskId))
-      );
+      allow read, create, update, delete: if (request.resource != null && canAccess(request.resource.data)) ||
+        canAccess(resource.data);
     }
   }
 }
