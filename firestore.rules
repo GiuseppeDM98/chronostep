@@ -16,14 +16,33 @@ service cloud.firestore {
         get(/databases/$(database)/documents/tasks/$(taskId)).data.userId == request.auth.uid;
     }
 
+    function stepDataOwned(stepData) {
+      return stepData != null && (
+        ownsResource(stepData) ||
+        (stepData.taskId != null && taskOwned(stepData.taskId))
+      );
+    }
+
+    function stepOwned(stepId) {
+      return stepId != null &&
+        signedIn() &&
+        exists(/databases/$(database)/documents/steps/$(stepId)) &&
+        stepDataOwned(get(/databases/$(database)/documents/steps/$(stepId)).data);
+    }
+
     function stepAccessible(resourceData) {
-      return ownsResource(resourceData) ||
-        (resourceData != null && resourceData.taskId != null && taskOwned(resourceData.taskId));
+      return resourceData != null && (
+        stepDataOwned(resourceData) ||
+        stepOwned(resourceData.parentStepId)
+      );
     }
 
     function workLogAccessible(resourceData) {
-      return ownsResource(resourceData) ||
-        (resourceData != null && resourceData.taskId != null && taskOwned(resourceData.taskId));
+      return resourceData != null && (
+        ownsResource(resourceData) ||
+        (resourceData.taskId != null && taskOwned(resourceData.taskId)) ||
+        stepOwned(resourceData.stepId)
+      );
     }
 
     match /tasks/{taskId} {
