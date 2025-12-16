@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import AuthGate from "../../components/AuthGate";
 import { useTaskStore } from "../../hooks/useTaskStore";
+import { buildStepsByTask, buildTaskActivity, describePriority, getTaskStepSummary } from "../../lib/insights";
 import type { WorkLog } from "../../lib/types";
 
 type GroupedLogs = Array<{
@@ -44,6 +45,11 @@ const TimelinePage = () => {
   const { workLogs, tasks, steps, isHydrated } = useTaskStore();
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);
+  const { logDurations, taskActivity } = useMemo(
+    () => buildTaskActivity(workLogs),
+    [workLogs],
+  );
 
   const taskLookup = useMemo(() => {
     const map = new Map(tasks.map((task) => [task.id, task.title]));
@@ -151,30 +157,61 @@ const TimelinePage = () => {
             <section key={group.dateLabel}>
               <h2 className="text-sm font-semibold uppercase text-slate-500">{group.dateLabel}</h2>
               <ol className="mt-3 space-y-3">
-                {group.logs.map((log) => (
-                  <li
-                    key={log.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {taskLookup.get(log.taskId) ?? "Task sconosciuto"}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {log.type.toUpperCase()} • {formatTime(log.timestamp)}
-                          {log.stepId ? ` • Step: ${stepLookup.get(log.stepId) ?? log.stepId}` : ""}
-                        </p>
+                {group.logs.map((log) => {
+                  const progress = getTaskStepSummary(stepsByTask, log.taskId);
+                  const durationMinutes = logDurations.get(log.id);
+                  const activity = taskActivity.get(log.taskId);
+                  return (
+                    <li
+                      key={log.id}
+                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+                    >
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {taskLookup.get(log.taskId) ?? "Task sconosciuto"}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {log.type.toUpperCase()} • {formatTime(log.timestamp)}
+                              {log.stepId
+                                ? ` • Step: ${stepLookup.get(log.stepId) ?? log.stepId}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="text-right text-xs text-slate-500">
+                            <p>{new Date(log.timestamp).toLocaleTimeString()}</p>
+                            <p>{describePriority(tasks.find((task) => task.id === log.taskId)?.priority)}</p>
+                          </div>
+                        </div>
+                        {log.message ? (
+                          <p className="text-sm text-slate-700">{log.message}</p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                          <span className="font-semibold">
+                            Progress {progress.done}/{progress.total}
+                          </span>
+                          {durationMinutes ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
+                              {durationMinutes} min
+                            </span>
+                          ) : null}
+                          {activity?.lastLogTimestamp === log.timestamp ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
+                              Ultimo aggiornamento
+                            </span>
+                          ) : null}
+                          <Link
+                            href={`/insights?task=${encodeURIComponent(log.taskId)}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 font-semibold text-slate-700 transition hover:border-slate-400"
+                          >
+                            Vai a Insights
+                          </Link>
+                        </div>
                       </div>
-                      <span className="text-xs text-slate-400">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    {log.message ? (
-                      <p className="mt-2 text-sm text-slate-700">{log.message}</p>
-                    ) : null}
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ol>
             </section>
           ))}

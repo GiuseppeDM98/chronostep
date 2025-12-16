@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useAuth } from "../hooks/useAuth";
+import TopNav from "./TopNav";
 
 const AuthGate = ({ children }: { children: ReactNode }) => {
   const { user, loading, error, signIn, signUp, signOutUser, clearError } = useAuth();
@@ -124,6 +125,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
             Sign out
           </button>
         </div>
+        <TopNav />
       </div>
       {children}
     </div>

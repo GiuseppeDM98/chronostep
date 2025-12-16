@@ -28,6 +28,11 @@ const PRIORITY_STYLES: Record<NonNullable<Task["priority"]>, string> = {
   medium: "text-amber-600",
   high: "text-rose-600",
 };
+const PRIORITY_ORDER: Record<NonNullable<Task["priority"]>, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
 
 const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
 const TASK_PRIORITIES: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
@@ -139,8 +144,18 @@ const TasksPage = () => {
   }, [steps, tasks]);
 
   const filteredTasks = useMemo(() => {
-    if (statusFilter === "all") return tasks;
-    return tasks.filter((task) => task.status === statusFilter);
+    const byStatus =
+      statusFilter === "all" ? tasks : tasks.filter((task) => task.status === statusFilter);
+    return [...byStatus].sort((taskA, taskB) => {
+      const priorityA =
+        taskA.priority !== undefined ? PRIORITY_ORDER[taskA.priority] : Number.POSITIVE_INFINITY;
+      const priorityB =
+        taskB.priority !== undefined ? PRIORITY_ORDER[taskB.priority] : Number.POSITIVE_INFINITY;
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+      return taskA.title.localeCompare(taskB.title);
+    });
   }, [statusFilter, tasks]);
 
   const resetForm = () => {

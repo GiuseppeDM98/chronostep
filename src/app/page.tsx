@@ -4,6 +4,7 @@ import AuthGate from "../components/AuthGate";
 const CTA_LINKS = [
   { href: "/tasks", label: "View Tasks", description: "Manage tasks, filters, and progress" },
   { href: "/timeline", label: "Timeline", description: "See your work logs chronologically" },
+  { href: "/insights", label: "Insights", description: "Focus planning e carico del team" },
 ];
 
 const HomePage = () => (

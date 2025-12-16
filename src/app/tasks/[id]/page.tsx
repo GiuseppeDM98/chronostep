@@ -21,6 +21,9 @@ const WORKLOG_TYPE_LABELS: Record<WorkLogType, string> = {
   note: "Note",
 };
 
+const TASK_STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
+const TASK_PRIORITY_OPTIONS: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
+
 const buildStepTree = (taskSteps: Step[]) => {
   const map = new Map<string, StepNode>();
 
@@ -52,6 +55,11 @@ const formatDate = (iso?: string) => {
   return new Date(iso).toLocaleDateString();
 };
 
+const toDateInputValue = (iso?: string) => {
+  if (!iso) return "";
+  return new Date(iso).toISOString().slice(0, 10);
+};
+
 const StatusBadge = ({ status }: { status: Task["status"] }) => {
   const styles: Record<Task["status"], string> = {
     todo: "bg-slate-100 text-slate-700",
@@ -80,13 +88,13 @@ const StepTree = ({
   <ul className="space-y-3">
     {nodes.map((node) => (
       <li key={node.id} className="rounded-lg border border-slate-200 p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <p className="font-medium text-slate-900">{node.title}</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="break-words font-medium text-slate-900">{node.title}</p>
             {node.description ? (
-              <p className="text-sm text-slate-600">{node.description}</p>
+              <p className="break-words text-sm text-slate-600">{node.description}</p>
             ) : null}
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{STEP_STATUS_LABELS[node.status]}</span>
               <select
                 className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700"
@@ -101,7 +109,7 @@ const StepTree = ({
               </select>
             </div>
           </div>
-          <div className="flex items-center gap-3 text-xs font-medium">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-medium sm:justify-end">
             <span className="text-slate-400">#{node.order}</span>
             <button
               type="button"
@@ -177,8 +185,21 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingLogType, setEditingLogType] = useState<WorkLogType>("note");
   const [editingLogMessage, setEditingLogMessage] = useState("");
   const [editingLogStepId, setEditingLogStepId] = useState("");
+  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [taskTitleInput, setTaskTitleInput] = useState("");
+  const [taskDescriptionInput, setTaskDescriptionInput] = useState("");
+  const [taskStatusInput, setTaskStatusInput] = useState<TaskStatus>("todo");
+  const [taskPriorityInput, setTaskPriorityInput] = useState<Task["priority"]>();
+  const [taskTagsInput, setTaskTagsInput] = useState("");
+  const [taskDueDateInput, setTaskDueDateInput] = useState("");
+  const [taskFormError, setTaskFormError] = useState<string | null>(null);
+  const [isTaskSaving, setIsTaskSaving] = useState(false);
 
   const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
+  const orderedSteps = useMemo(
+    () => [...taskSteps].sort((first, second) => first.order - second.order),
+    [taskSteps],
+  );
 
   const totalSteps = taskSteps.length;
   const completedSteps = taskSteps.filter((step) => step.status === "done").length;
@@ -205,6 +226,70 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingLogStepId("");
   };
 
+  const resetTaskEditForm = () => {
+    setTaskTitleInput("");
+    setTaskDescriptionInput("");
+    setTaskStatusInput("todo");
+    setTaskPriorityInput(undefined);
+    setTaskTagsInput("");
+    setTaskDueDateInput("");
+    setTaskFormError(null);
+  };
+
+  const startTaskEdit = () => {
+    if (!task) return;
+    setTaskTitleInput(task.title);
+    setTaskDescriptionInput(task.description ?? "");
+    setTaskStatusInput(task.status);
+    setTaskPriorityInput(task.priority);
+    setTaskTagsInput(task.tags?.join(", ") ?? "");
+    setTaskDueDateInput(toDateInputValue(task.dueDate));
+    setTaskFormError(null);
+    setIsEditingTask(true);
+  };
+
+  const cancelTaskEdit = () => {
+    resetTaskEditForm();
+    setIsEditingTask(false);
+  };
+
+  const handleTaskEditSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!task) return;
+    const trimmedTitle = taskTitleInput.trim();
+    if (!trimmedTitle) {
+      setTaskFormError("Il titolo è obbligatorio.");
+      return;
+    }
+    setIsTaskSaving(true);
+    setTaskFormError(null);
+    try {
+      const trimmedDescription = taskDescriptionInput.trim();
+      const tags =
+        taskTagsInput
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean) ?? [];
+      const dueDateIso = taskDueDateInput
+        ? new Date(`${taskDueDateInput}T00:00:00.000Z`).toISOString()
+        : undefined;
+      await updateTask(task.id, {
+        title: trimmedTitle,
+        description: trimmedDescription || undefined,
+        status: taskStatusInput,
+        priority: taskPriorityInput,
+        tags: tags.length > 0 ? tags : undefined,
+        dueDate: dueDateIso,
+      });
+      cancelTaskEdit();
+    } catch (error) {
+      console.error(error);
+      setTaskFormError("Errore durante il salvataggio del task.");
+    } finally {
+      setIsTaskSaving(false);
+    }
+  };
+
   useEffect(() => {
     if (editingStepId && !taskSteps.some((step) => step.id === editingStepId)) {
       resetStepEditForm();
@@ -216,6 +301,13 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       resetWorkLogEditForm();
     }
   }, [editingLogId, taskLogs]);
+
+  useEffect(() => {
+    if (!task) {
+      resetTaskEditForm();
+      setIsEditingTask(false);
+    }
+  }, [task]);
 
   if (!isHydrated) {
     return (
@@ -363,12 +455,19 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
               }
               className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
             >
-              {(["todo", "in_progress", "done", "blocked"] as TaskStatus[]).map((value) => (
+              {TASK_STATUS_OPTIONS.map((value) => (
                 <option key={value} value={value}>
                   {value.replace("_", " ")}
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              className="text-xs font-semibold text-slate-600 transition hover:text-slate-900"
+              onClick={() => (isEditingTask ? cancelTaskEdit() : startTaskEdit())}
+            >
+              {isEditingTask ? "Chiudi modifica" : "Modifica Task"}
+            </button>
             <button
               type="button"
               className="text-xs text-rose-600 hover:text-rose-700"
@@ -410,6 +509,106 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
               </span>
             ))}
           </div>
+        ) : null}
+        {isEditingTask ? (
+          <form
+            className="mt-6 space-y-4 rounded-2xl border border-slate-100 bg-slate-50 p-5"
+            onSubmit={handleTaskEditSubmit}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-slate-700">Modifica Task</p>
+              <button
+                type="button"
+                className="text-xs text-slate-500 hover:text-slate-700"
+                onClick={cancelTaskEdit}
+                disabled={isTaskSaving}
+              >
+                Annulla
+              </button>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600">Titolo *</label>
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={taskTitleInput}
+                onChange={(event) => setTaskTitleInput(event.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-600">Descrizione</label>
+              <textarea
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                rows={3}
+                value={taskDescriptionInput}
+                onChange={(event) => setTaskDescriptionInput(event.target.value)}
+                placeholder="Dettagli o note aggiuntive"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Status</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={taskStatusInput}
+                  onChange={(event) => setTaskStatusInput(event.target.value as TaskStatus)}
+                >
+                  {TASK_STATUS_OPTIONS.map((statusOption) => (
+                    <option key={statusOption} value={statusOption}>
+                      {statusOption.replace("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Priorità</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={taskPriorityInput ?? ""}
+                  onChange={(event) =>
+                    setTaskPriorityInput(
+                      event.target.value ? (event.target.value as Task["priority"]) : undefined,
+                    )
+                  }
+                >
+                  <option value="">Nessuna</option>
+                  {TASK_PRIORITY_OPTIONS.map((priorityOption) => (
+                    <option key={priorityOption} value={priorityOption}>
+                      {priorityOption}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-slate-600">Due date</label>
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={taskDueDateInput}
+                  onChange={(event) => setTaskDueDateInput(event.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-slate-600">Tags (comma)</label>
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={taskTagsInput}
+                  onChange={(event) => setTaskTagsInput(event.target.value)}
+                  placeholder="design,backend"
+                />
+              </div>
+            </div>
+            {taskFormError ? <p className="text-sm text-rose-600">{taskFormError}</p> : null}
+            <button
+              type="submit"
+              className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              disabled={isTaskSaving}
+            >
+              {isTaskSaving ? "Salvataggio..." : "Salva Task"}
+            </button>
+          </form>
         ) : null}
       </section>
 
@@ -499,19 +698,19 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             />
             <div className="flex flex-col gap-3 sm:flex-row">
               <select
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:flex-1"
                 value={newStepParentId}
                 onChange={(event) => setNewStepParentId(event.target.value)}
               >
                 <option value="">Step principale</option>
-                {taskSteps.map((step) => (
+                {orderedSteps.map((step) => (
                   <option key={step.id} value={step.id}>
-                    Substep di: {step.title}
+                    Substep di #{step.order}: {step.title}
                   </option>
                 ))}
               </select>
               <select
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:flex-1"
                 value={newStepStatus}
                 onChange={(event) => setNewStepStatus(event.target.value as StepStatus)}
               >
@@ -612,9 +811,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                 onChange={(event) => setEditingLogStepId(event.target.value)}
               >
                 <option value="">Nessun step</option>
-                {taskSteps.map((step) => (
+                {orderedSteps.map((step) => (
                   <option key={step.id} value={step.id}>
-                    {step.title}
+                    #{step.order} - {step.title}
                   </option>
                 ))}
               </select>
@@ -653,9 +852,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
               onChange={(event) => setNewLogStepId(event.target.value)}
             >
               <option value="">Nessun step</option>
-              {taskSteps.map((step) => (
+              {orderedSteps.map((step) => (
                 <option key={step.id} value={step.id}>
-                  {step.title}
+                  #{step.order} - {step.title}
                 </option>
               ))}
             </select>

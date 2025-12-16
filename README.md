@@ -21,11 +21,11 @@ It focuses on **clarity, tracking, and execution** rather than planning heavy wo
 
 ## ✨ Latest updates
 
-- Step cards now support optional descriptions so each (sub)step can carry extra context.
-- Steps and substeps can be edited inline without recreating them.
-- Work Logs on the task detail page now include edit and delete controls.
-- Added a custom Chronostep favicon for easier recognition in browser tabs.
-- Migrated persistence and authentication to Firebase (Firestore + Firebase Auth).
+- Task detail view now include full editing for titles, descrizioni, priorità, tag e due date.
+- Steps e substeps sono ordinati e richiamabili ovunque (dropdown di parent/WorkLog) con i rispettivi numeri.
+- Work Logs mostrano badge di progress, durata stimata (start/stop) e link diretto alla nuova dashboard Insights.
+- Aggiunta la pagina **Insights & Pianificazione** con focus rapido, prossime scadenze, attività recente, grafici per priorità/tag e calendario interattivo (cliccare i giorni apre l’elenco dei task con link).
+- Barra di navigazione globale in tutte le pagine per accedere rapidamente a Home, Tasks, Timeline e Insights.
 
 ---
 
@@ -66,28 +66,33 @@ Useful for daily summaries, retrospectives, and tracking actual work done.
 
 ## 🧩 App Structure
 
-### **Dashboard**
-Quick overview of:
-- Tasks in progress
-- Logs from today
-- Fast actions (new task, new log)
+All authenticated views now share a global top navigation bar with quick links to Home, Tasks, Timeline and Insights so you can hop between sections without backtracking.
 
 ### **Tasks List (`/tasks`)**
 Displays all tasks with filters:
 - Status (todo, in progress, done, blocked)
 - Tags
 - Priority
+- Ordinamento automatico dalla priorità più urgente a quella meno urgente
 
 ### **Task Detail (`/tasks/[id]`)**
 Includes:
 - Task metadata
 - Steps and nested substeps with their descriptions
+- Inline task edit form (titolo, descrizione, status, priority, tag, due date)
 - Work log timeline
 - Inline controls to edit/delete steps, substeps, and work logs
 - Forms to add/update everything
 
 ### **Timeline (`/timeline`)**
-A chronological journal of all logged activity across tasks.
+A chronological journal of all logged activity across tasks, enriched with progress badges, durata calcolata dagli start/stop e link rapidi alla dashboard Insights.
+
+### **Insights & Pianificazione (`/insights`)**
+Reports e pianificazione personale:
+- Focus rapido richiamabile dai Work Log
+- Prossime scadenze e attività recente
+- Grafici di carico per priorità e tag
+- Calendario mensile interattivo: clicca un giorno per espandere i task con link diretto
 
 ### **Settings (`/settings`)**
 Reserved for future improvements:
