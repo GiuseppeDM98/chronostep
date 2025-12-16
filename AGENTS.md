@@ -1,274 +1,151 @@
 # AI Agent Guidelines for Code Development
 
-This document provides instructions for AI agents working on this codebase. Follow these principles when proposing new code or modifying existing code.
+Chronostep is a Next.js (App Router, TypeScript) workspace backed by Firebase Authentication and Firestore. UI pages live under `src/app`, reusable logic inside `src/hooks` and `src/lib`, and every authenticated screen is wrapped by `AuthGate` to enforce sign-in.
 
 ## General Principles
 
 ### Readability and Maintainability
-- Use descriptive names for variables, functions, and classes
-- Avoid ambiguous abbreviations
-- Write code that is self-documenting where possible
-- Structure code for clarity and ease of understanding
+- Keep Firestore access isolated inside `useTaskStore` and consume its snapshot/state in page components (see `src/app/tasks/page.tsx` and `src/app/insights/page.tsx`).
+- Memoize derived data such as grouped logs or calendar cells with `useMemo` so large components stay predictable.
+- Extract declarative constants (`CTA_LINKS`, `STATUS_FILTERS`, `TASK_STATUS_OPTIONS`, etc.) to the top of a file and reuse them instead of scattering literals.
+- When you add new derived helpers, co-locate them near the component and keep props flat; avoid prop-drilling when context (`useAuth`, `useTaskStore`) already supplies the data.
 
 ### SOLID Principles
-- **Single Responsibility Principle**: Each class/function should have one clear purpose
-- **Open/Closed Principle**: Code should be open for extension but closed for modification
-- **Liskov Substitution Principle**: Subtypes must be substitutable for their base types
-- **Interface Segregation Principle**: Keep interfaces focused and minimal
-- **Dependency Inversion Principle**: Depend on abstractions, not concretions
+- **Single Responsibility Principle**: `src/hooks/useTaskStore.ts` owns Firestore reads/writes plus snapshot hydration, and `src/components/AuthGate.tsx` handles authentication UI. Extend those units rather than duplicating their duties elsewhere.
+- **Open/Closed Principle**: Add new progress or analytics helpers by composing new functions beside `buildStepsByTask` or `buildTaskActivity` inside `src/lib/insights.ts`, keeping existing behavior untouched.
+- **Liskov Substitution Principle**: The domain contracts in `src/lib/types.ts` define exact field requirements, so keep new entities compatible with those interfaces or introduce new types when semantics diverge.
+- **Interface Segregation Principle**: Prefer focused hooks/contexts (e.g., `useAuth`, `useTaskStore`) over "god" providers; expose specific actions and state slices rather than dumping Firestore objects into components.
+- **Dependency Inversion Principle**: Obtain Firebase instances through `src/lib/firebaseClient.ts` and inject abstractions (hooks/helpers) into components; never initialize SDKs inside UI files.
 
 ### DRY (Don't Repeat Yourself)
-- Avoid code duplication
-- Extract common logic into reusable functions or modules
-- Use abstraction to eliminate redundancy
+- Reuse shared helpers (`buildStepsByTask`, `getTaskStepSummary`, `describePriority`) along the pages to avoid reimplementing count/format logic.
+- Treat enumerations consistently: update all `TaskStatus`/`TaskPriority` arrays (`TASK_STATUSES`, `TASK_PRIORITIES`, `TASK_STATUS_OPTIONS`) whenever you introduce a new literal to keep filters and dropdowns in sync.
+- When building nested UIs (step trees, grouped logs), centralize the transformation (`buildStepTree`, grouped map builders) and reuse it across render paths instead of recalculating inline.
 
 ### Compact Functions
-- Keep functions short and focused on a single task
-- A function should do one thing and do it well
-- If a function becomes too long, consider breaking it into smaller functions
+- Favor small, purpose-built callbacks and helpers; compose them at the render site. The existing pages split formatting (`formatPriority`, `formatTime`) from rendering to maintain clarity—follow the same pattern when adding features.
+- When a function grows beyond a screenful (e.g., new modal logic), pull discrete responsibilities into hooks or helper functions to keep files approachable.
 
 ### Error Handling
-- Implement robust and informative error handling
-- Provide meaningful error messages
-- Handle edge cases and unexpected inputs gracefully
-- Use appropriate error handling mechanisms for the language
+- Mirror the pattern in `src/hooks/useAuth.tsx`: reset error state before async work, catch SDK errors, translate them into user-friendly strings, and rethrow when the caller must know about failures.
+- Guard privileged operations with `ensureUserId` (or equivalent) and short-circuit if the preconditions are not met, as seen in `useTaskStore`.
+- Prefer optimistic UI updates plus `refreshState()` calls after mutations; if you add complex workflows, surface loading/error toggles so `AuthGate` pages remain responsive.
 
 ### Testing
-- Provide unit tests for new features
-- Ensure tests are comprehensive and cover edge cases
-- Write tests that are maintainable and easy to understand
-- Follow testing best practices for the language/framework
+- There are no automated tests yet. When you create pure helpers under `src/lib`, add colocated unit tests (e.g., `insights.test.ts`) or at least provide sample usage inside the docs to keep regressions small.
+- For UI flows, rely on manual verification via `npm run dev` plus seeded Firestore data; document any manual QA steps in PR descriptions.
 
 ### Style Conventions
-- Follow the established conventions for the specific programming language
-- Maintain consistent indentation, spacing, and formatting
-- Adhere to the project's existing code style
-- Use linters and formatters where available
+- This project uses TypeScript, React 18, Next.js App Router, Tailwind CSS, and Firebase SDKs—follow their idiomatic patterns.
+- Client components begin with `"use client";` and keep hooks at the top. Server components should remain hook-free.
+- Keep comments and code in English even if UI copy occasionally contains Italian text.
+- Use Tailwind utility classes for styling; avoid inline styles unless absolutely necessary.
+- Keep files ASCII-only unless you must surface existing localized copy.
 
 ---
 
 ## Comment Guidelines
 
-**IMPORTANT: All comments must be written in English.**
-
-Comments are essential for reducing the reader's cognitive load and explaining information that is not obvious from the code itself. Use comments strategically to make the codebase more accessible and maintainable.
+**IMPORTANT: All comments must be written in English.** Favor comments that explain rationale or domain intent; let TypeScript types express structure.
 
 ### Recommended Comment Types
 
 #### 1. Function Comments
-Document the interface of functions, classes, and modules.
-
-**Purpose:**
-- Allow readers to treat code as a black box
-- Describe what the function does, its parameters, and return values
-- Document preconditions, postconditions, and side effects
-
-**Placement:** At the beginning of functions, classes, or macros
-
-**Example:**
-```c
-/* 
- * Seek the greatest key in the subtree.
- * Return 0 on out of memory, otherwise 1.
+Document public contracts or data structures so contributors can treat them as black boxes. Example (`src/lib/types.ts:25-69`):
+```ts
+/**
+ * Top-level item that users manipulate. Tracks metadata and progress signals.
  */
-int findMaxKey(Node* root) {
-    // implementation
+export interface Task {
+  id: EntityId;
+  // …
 }
 ```
 
 #### 2. Design Comments
-Explain high-level architecture and design decisions.
-
-**Purpose:**
-- Provide a high-level overview of the implementation
-- Explain algorithms, techniques, and architectural choices
-- Justify why certain approaches were chosen
-- Document trade-offs and alternatives considered
-
-**Placement:** Usually at the beginning of files or major sections
-
-**Example:**
-```python
-"""
-This module implements a B-tree index for fast lookups.
-
-We chose a B-tree over a hash table because:
-1. We need ordered iteration
-2. Range queries are common in our use case
-3. Memory usage is more predictable
-
-The implementation uses a branching factor of 64 to optimize
-for cache line size on modern CPUs.
-"""
+Use file- or module-level comments to explain sourcing decisions or architectural tradeoffs. Example (`src/lib/types.ts:1-4`):
+```ts
+/**
+ * Domain model primitives for Chronostep.
+ * Derived from docs/02-domain-model-and-routes.md to keep the UI and data layer in sync.
+ */
 ```
 
 #### 3. Why Comments
-Explain the reasoning behind non-obvious code.
-
-**Purpose:**
-- Explain WHY the code does something, not WHAT it does
-- Prevent future modifications that could introduce bugs
-- Document business logic or domain-specific requirements
-- Clarify decisions that might seem strange or counterintuitive
-
-**Example:**
-```javascript
-// We must flush the buffer before closing the connection
-// because the remote server has a 2-second timeout and
-// large payloads can take longer to transmit
-flushBuffer();
-closeConnection();
+Add inline comments only when intent is non-obvious. Example (`src/app/insights/page.tsx:42-45`):
+```ts
+const startOffset = (startOfMonth.getDay() + 6) % 7; // Monday as first column
 ```
 
 #### 4. Teacher Comments
-Educate readers about domain concepts.
-
-**Purpose:**
-- Teach domain-specific concepts (math, algorithms, protocols)
-- Make the code accessible to more developers
-- Explain specialized terminology or techniques
-- Provide references to external resources
-
-**Example:**
-```java
-/*
- * This implements the Luhn algorithm (modulo 10) for credit card validation.
- * The algorithm works by:
- * 1. Starting from the rightmost digit, double every second digit
- * 2. If doubling results in a number > 9, subtract 9
- * 3. Sum all the digits
- * 4. If the sum is divisible by 10, the number is valid
- * 
- * Reference: https://en.wikipedia.org/wiki/Luhn_algorithm
+Explain domain background or demo data so future readers understand context. Example (`src/lib/mockData.ts:5-7`):
+```ts
+/**
+ * Seed data for local development before persistence is in place.
  */
 ```
 
 #### 5. Guide Comments
-Help readers navigate and understand code structure.
-
-**Purpose:**
-- Assist readers in processing the code
-- Provide clear division and rhythm
-- Introduce major sections or logical blocks
-- Act as "chapter headings" for code
-
-**Example:**
-```c
-/* Initialize connection pool */
-connectionPool = createPool(config);
-
-/* Register event handlers */
-registerOnConnect(handleConnect);
-registerOnError(handleError);
-
-/* Free the query buffer */
-freeBuffer(queryBuffer);
-```
+Use short section headers to break up very long components (e.g., the task-detail page) when adding new blocks of forms or derived lists. Introduce them sparingly such as `/* Step creation form */` before a JSX section when structure alone is not enough.
 
 #### 6. Checklist Comments
-Remind developers of necessary updates.
-
-**Purpose:**
-- Highlight dependencies between different parts of the code
-- Warn about changes that require updates elsewhere
-- Prevent incomplete modifications
-
-**Example:**
-```typescript
-// Warning: if you add a type here, update getTypeNameByID() in utils.ts
-enum DataType {
-    STRING,
-    NUMBER,
-    BOOLEAN
-}
-```
+Place warnings near tightly coupled declarations when missing updates would break the UI (e.g., if you add a new `TaskStatus`, remind readers to update `TASK_STATUS_OPTIONS` and `TASK_STATUSES`). There are no current examples, so add them only where the coupling is real.
 
 ---
 
 ### Comments to Avoid
 
-#### Trivial Comments
-Comments that require more cognitive effort than the code itself.
-
-**Bad Example:**
-```python
-# Increment i
-i += 1
-```
-
-**Why to avoid:** The code is already self-explanatory. The comment adds no value and creates maintenance burden.
-
-#### Debt Comments
-TODO, FIXME, XXX comments should be minimized.
-
-**Why to avoid:**
-- They accumulate over time
-- They're often ignored
-- They should be tracked in an issue tracker instead
-
-**If you must use them:**
-- Include a ticket number or issue reference
-- Add a date and author
-- Be specific about what needs to be done
-
-#### Backup Comments
-Never leave old versions of code commented out.
-
-**Bad Example:**
-```java
-// Old implementation
-// return calculateTotal(items, tax);
-
-// New implementation
-return calculateTotalWithDiscount(items, tax, discount);
-```
-
-**Why to avoid:**
-- Use version control instead
-- Commented code creates confusion
-- It clutters the codebase
+- Do not restate obvious logic (`// increment i`) or Tailwind utility meaning.
+- Avoid leaving TODO/FIXME without an issue reference; prefer creating GitHub issues or updating `docs/04-implementation-plan.md`.
+- Never keep commented-out code; rely on git history instead.
+- Keep comments English-only even though UI copy mixes languages.
 
 ---
 
-## Additional Principles
+## Project-Specific Guidelines
 
-### The Golden Rule of Comments
-**Comments should explain WHY, not WHAT.**
+### Architecture Overview
+- Next.js App Router drives routing (`src/app/**/page.tsx`). Every page wraps its tree with `AuthGate` so only authenticated users see data.
+- `useAuth` manages Firebase Authentication state, while `useTaskStore` centralizes Firestore collections (`tasks`, `steps`, `workLogs`) and exposes CRUD helpers plus hydration flags.
+- Derived analytics (step counts, activity summaries) live in `src/lib/insights.ts` and are consumed by both Timeline and Insights pages.
+- Domain documentation under `docs/02-domain-model-and-routes.md` and the README remain the canonical source when you need business rules.
 
-The code itself shows what is happening. Comments should provide context, reasoning, and information that cannot be expressed in code.
+### Key Workflows
+- Install deps with `npm install`, then run `npm run dev` for local development. Use `npm run build` and `npm run start` to simulate production, and `npm run lint` to enforce Next.js ESLint defaults.
+- Configure Firebase credentials via `.env` (`NEXT_PUBLIC_FIREBASE_*`). Test auth flows inside `AuthGate` before touching data.
+- Manual testing relies on your own Firebase project; seed collections via the UI or temporary scripts if needed.
 
-### Keep Comments Updated
-- When you modify code, update the relevant comments
-- Outdated comments are worse than no comments
-- Make comment maintenance part of the code review process
+### Important Patterns
+- Use `isHydrated` from `useTaskStore` to gate rendering of data-heavy sections (empty states vs. loading placeholders).
+- Convert arrays into lookup maps with `useMemo` before rendering to minimize repeated computation (`stepsByTask`, grouped logs, calendar grids).
+- Keep form state local to the component and reset via helper functions (see modal helpers in `src/app/tasks/page.tsx`).
+- Navigation uses `next/link` plus semantic buttons; keep accessible labels consistent.
 
-### Reduce Cognitive Load
-- Write comments that help readers understand the code faster
-- Consider the context and background knowledge of your audience
-- Provide the right level of detail for the situation
-
-### Write for the Future
-- Write comments thinking about the future reader (who might be you)
-- Assume the reader is intelligent but unfamiliar with the specific context
-- Make it easy for others to understand and modify the code
+### Integration Points
+- Firebase Auth and Firestore are the only external services; keep SDK usage inside hooks/lib files.
+- Firestore collections expected by the UI: `tasks`, `steps`, `workLogs` with the schema defined in `src/lib/types.ts`.
+- Environment variables: `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`.
 
 ---
 
 ## Language-Specific Notes
 
-When working with specific programming languages, also follow:
-- Language-specific style guides (PEP 8 for Python, Google Style Guide for Java, etc.)
-- Framework-specific conventions and best practices
-- Project-specific coding standards documented elsewhere in the repository
+- Stick to TypeScript strictness: annotate props, hook returns, and derived data maps.
+- Follow React/Next.js rules of hooks and App Router conventions (client components mark `"use client";` on the first line).
+- Use `next/link` for internal navigation and avoid mixing imperative router pushes unless needed.
+- Tailwind utilities should be composed in `className`; extract to helper components only when reuse is obvious.
+
+---
+
+## Quick Reference
+
+- [ ] Review `src/lib/types.ts` before touching persistence to keep domain contracts aligned.
+- [ ] Run `npm run lint` (and `npm run build` when touching build-time code) before submitting changes.
+- [ ] Launch the dev server with `npm run dev` to exercise AuthGate, task CRUD, and insights flows.
+- [ ] Keep Firebase env vars in sync with your local `.env`; confirm they are available before initializing SDKs.
 
 ---
 
 ## Conclusion
 
-These guidelines aim to maintain high code quality and readability. When in doubt:
-1. Prioritize clarity over cleverness
-2. Write code for humans, not just machines
-3. Consider the maintainability impact of every change
-4. Ask yourself: "Will I understand this in 6 months?"
-
-Remember: Good code is not just about functionality—it's about creating a maintainable and understandable system that evolves gracefully over time.
+Favor clear, typed abstractions, lean on the existing hooks/components for Firebase access, and document intent whenever the code would otherwise be surprising. Build features that extend the current patterns instead of reinventing them, and always double-check that updates stay in sync across the shared constants, domain types, and UI states.
