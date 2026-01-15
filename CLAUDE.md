@@ -27,6 +27,7 @@ Keep information concise and actionable.
 - Steps: nested steps with ordering and status updates.
 - Work logs: start/stop/note entries per task or step.
 - Timeline: chronological work log view with filters (`src/app/timeline/page.tsx`).
+- Report: monthly summary by task with totals and note highlights (`src/app/report/page.tsx`).
 - Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
 - Shared UI: top navigation and auth gate (`src/components`).
 
@@ -73,7 +74,6 @@ Keep information concise and actionable.
 - Lack of tests increases regression risk for refactors.
 
 ## Suggested next additions (from docs)
-- Monthly report page (`docs/feature-implementation-ideas.md`).
 - WorkLog tags and tag filtering.
 - Step status filters on task detail.
 - Preset work logs / quick log actions.

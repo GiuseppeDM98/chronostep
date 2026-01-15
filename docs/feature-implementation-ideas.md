@@ -4,8 +4,11 @@ Questo documento raccoglie i miglioramenti richiesti per Chronostep, spiegando l
 
 ## 1) Report mensile (raggruppato per progetto/task)
 
+**Stato**
+Completato.
+
 **Scopo**
-Offrire una pagina “Report” mensile che riassume il lavoro per progetto/task con totali e un elenco sintetico delle attivita, cosi da preparare rapidamente il report per il manager.
+Offrire una pagina "Report" mensile che riassume il lavoro per progetto/task con totali e un elenco sintetico delle attivita, cosi da preparare rapidamente il report per il manager.
 
 **Come implementarlo**
 - Aggiungere una nuova pagina in `src/app/report/page.tsx` con `AuthGate`.

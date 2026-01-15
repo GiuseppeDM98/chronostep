@@ -15,6 +15,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `src/app/tasks/page.tsx` lists tasks.
 - `src/app/tasks/[id]/page.tsx` is task detail, edit, steps, work logs.
 - `src/app/timeline/page.tsx` is chronological work log view.
+- `src/app/report/page.tsx` is monthly report by task.
 - `src/app/insights/page.tsx` is analytics + calendar.
 - `src/app/layout.tsx` defines metadata and global wrapper.
 - `src/app/providers.tsx` wires React context providers.
@@ -69,6 +70,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `src/lib/insights.ts` holds derived metrics and summaries.
 - `buildStepsByTask` returns step totals by task.
 - `buildTaskActivity` computes durations and last log per task.
+- `buildMonthlyReportSummary` aggregates per-task totals and highlights for reports.
 - `describePriority` normalizes priority labels.
 
 ## Firebase setup

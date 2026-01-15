@@ -30,6 +30,13 @@ export type TaskActivityResult = {
   taskActivity: Map<string, TaskActivitySummary>;
 };
 
+export type MonthlyReportEntry = {
+  taskId: string;
+  totalMinutes: number;
+  logCount: number;
+  highlights: string[];
+};
+
 // Derive per-task activity from work logs, handling explicit durations and start/stop sessions.
 export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
   // Sort ascending so start/stop sessions compute forward in time.
@@ -73,6 +80,52 @@ export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
   });
 
   return { logDurations, taskActivity };
+};
+
+/**
+ * Build per-task monthly summaries with total minutes and note highlights.
+ *
+ * Args:
+ *   workLogs: Filtered work logs for a specific month.
+ *   highlightLimit: Max number of note highlights per task.
+ *
+ * Returns:
+ *   MonthlyReportEntry[]: Sorted summaries ready for report UI.
+ */
+export const buildMonthlyReportSummary = (
+  workLogs: WorkLog[],
+  highlightLimit = 3,
+): MonthlyReportEntry[] => {
+  const { taskActivity } = buildTaskActivity(workLogs);
+  const highlightsByTask = new Map<string, string[]>();
+
+  const sortedLogs = [...workLogs].sort(
+    (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
+  );
+
+  sortedLogs.forEach((log) => {
+    if (!log.message) return;
+    const trimmed = log.message.trim();
+    if (!trimmed) return;
+    const highlights = highlightsByTask.get(log.taskId) ?? [];
+    if (highlights.includes(trimmed)) return;
+    if (highlights.length < highlightLimit) {
+      highlights.push(trimmed);
+      highlightsByTask.set(log.taskId, highlights);
+    }
+  });
+
+  return Array.from(taskActivity.entries())
+    .map(([taskId, activity]) => ({
+      taskId,
+      totalMinutes: activity.totalMinutes,
+      logCount: activity.logCount,
+      highlights: highlightsByTask.get(taskId) ?? [],
+    }))
+    .sort(
+      (a, b) =>
+        b.totalMinutes - a.totalMinutes || b.logCount - a.logCount || a.taskId.localeCompare(b.taskId),
+    );
 };
 
 // Return a summary bucket even if the task has no steps yet.
