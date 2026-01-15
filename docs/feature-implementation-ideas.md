@@ -25,6 +25,9 @@ Offrire una pagina "Report" mensile che riassume il lavoro per progetto/task con
 
 ## 2) Tag/etichette sui worklog
 
+**Stato**
+Completato.
+
 **Scopo**
 Introdurre tag (cliente, progetto, tipo attivita) per filtrare e aggregare meglio i dati a fine mese.
 
