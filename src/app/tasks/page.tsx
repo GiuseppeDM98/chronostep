@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "../../components/AuthGate";
 import type { Task, TaskStatus } from "../../lib/types";
 import { useTaskStore } from "../../hooks/useTaskStore";
@@ -60,7 +60,7 @@ const TaskCard = ({
         <div>
           <h3 className="text-lg font-semibold text-slate-900">{task.title}</h3>
           {task.description ? (
-            <p className="mt-1 text-sm text-slate-600">{task.description}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>
           ) : null}
         </div>
         <span
@@ -125,6 +125,8 @@ const TasksPage = () => {
   const [dueDate, setDueDate] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const modalTextSnapshot = useRef({ title: "", description: "", tags: "" });
+  const [escWarning, setEscWarning] = useState<string | null>(null);
 
   const stepsByTask = useMemo(() => {
     // Pre-compute step totals per task to keep render logic simple.
@@ -169,12 +171,55 @@ const TasksPage = () => {
     setTagsInput("");
     setDueDate("");
     setFormError(null);
+    setEscWarning(null);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     resetForm();
   };
+
+  const openModal = () => {
+    modalTextSnapshot.current = {
+      title: title.trim(),
+      description: description.trim(),
+      tags: tagsInput.trim(),
+    };
+    setEscWarning(null);
+    setIsModalOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const snapshot = modalTextSnapshot.current;
+      const hasTextChanges =
+        title.trim() !== snapshot.title ||
+        description.trim() !== snapshot.description ||
+        tagsInput.trim() !== snapshot.tags;
+      if (!hasTextChanges && !isSaving) {
+        event.preventDefault();
+        closeModal();
+      } else if (hasTextChanges) {
+        setEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isModalOpen, title, description, tagsInput, isSaving, closeModal]);
+
+  useEffect(() => {
+    if (!isModalOpen || !escWarning) return;
+    const snapshot = modalTextSnapshot.current;
+    const hasTextChanges =
+      title.trim() !== snapshot.title ||
+      description.trim() !== snapshot.description ||
+      tagsInput.trim() !== snapshot.tags;
+    if (!hasTextChanges) {
+      setEscWarning(null);
+    }
+  }, [isModalOpen, escWarning, title, description, tagsInput]);
 
   const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -231,7 +276,7 @@ const TasksPage = () => {
         </div>
         <button
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-          onClick={() => setIsModalOpen(true)}
+          onClick={openModal}
         >
           + New Task
         </button>
@@ -302,6 +347,11 @@ const TasksPage = () => {
             </div>
 
             <form className="mt-6 space-y-4" onSubmit={handleCreateTask}>
+              {escWarning ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {escWarning}
+                </p>
+              ) : null}
               <div>
                 <label className="text-sm font-medium text-slate-700">Titolo *</label>
                 <input

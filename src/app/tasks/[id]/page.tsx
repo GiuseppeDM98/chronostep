@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "../../../components/AuthGate";
 import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 import { useTaskStore } from "../../../hooks/useTaskStore";
@@ -139,7 +139,9 @@ const StepTree = ({
           <div className="flex min-w-0 flex-col gap-1">
             <p className="break-words font-medium text-slate-900">{node.title}</p>
             {node.description ? (
-              <p className="break-words text-sm text-slate-600">{node.description}</p>
+              <p className="break-words whitespace-pre-wrap text-sm text-slate-600">
+                {node.description}
+              </p>
             ) : null}
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <StepStatusBadge status={node.status} />
@@ -225,6 +227,8 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingStepTitle, setEditingStepTitle] = useState("");
   const [editingStepDescription, setEditingStepDescription] = useState("");
   const [editingStepStatus, setEditingStepStatus] = useState<StepStatus>("todo");
+  const [editingStepParentId, setEditingStepParentId] = useState("");
+  const [editingStepOriginalParentId, setEditingStepOriginalParentId] = useState("");
 
   const [newLogType, setNewLogType] = useState<WorkLogType>("note");
   const [newLogMessage, setNewLogMessage] = useState("");
@@ -236,7 +240,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingLogMessage, setEditingLogMessage] = useState("");
   const [editingLogStepId, setEditingLogStepId] = useState("");
   const [editingLogTags, setEditingLogTags] = useState("");
-  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [isStepModalOpen, setIsStepModalOpen] = useState(false);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [taskTitleInput, setTaskTitleInput] = useState("");
   const [taskDescriptionInput, setTaskDescriptionInput] = useState("");
   const [taskStatusInput, setTaskStatusInput] = useState<TaskStatus>("todo");
@@ -245,6 +251,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [taskDueDateInput, setTaskDueDateInput] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [isTaskSaving, setIsTaskSaving] = useState(false);
+  const taskTextSnapshot = useRef({ title: "", description: "", tags: "" });
+  const stepTextSnapshot = useRef({ title: "", description: "" });
+  const logTextSnapshot = useRef({ message: "", tags: "" });
+  const [taskEscWarning, setTaskEscWarning] = useState<string | null>(null);
+  const [stepEscWarning, setStepEscWarning] = useState<string | null>(null);
+  const [logEscWarning, setLogEscWarning] = useState<string | null>(null);
 
   const logTagLimit = 3;
 
@@ -257,6 +269,29 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     () => [...taskSteps].sort((first, second) => first.order - second.order),
     [taskSteps],
   );
+  const editingStepDescendantIds = useMemo(() => {
+    if (!editingStepId) return new Set<string>();
+    const collectDescendants = (nodes: StepNode[]): Set<string> => {
+      for (const node of nodes) {
+        if (node.id === editingStepId) {
+          const collectFrom = (current: StepNode, acc: Set<string>) => {
+            current.children.forEach((child) => {
+              acc.add(child.id);
+              collectFrom(child, acc);
+            });
+            return acc;
+          };
+          return collectFrom(node, new Set());
+        }
+        const nested = collectDescendants(node.children);
+        if (nested.size > 0) {
+          return nested;
+        }
+      }
+      return new Set();
+    };
+    return collectDescendants(stepTree);
+  }, [editingStepId, stepTree]);
 
   const totalSteps = taskSteps.length;
   const completedSteps = taskSteps.filter((step) => step.status === "done").length;
@@ -268,12 +303,25 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       ),
     [taskLogs],
   );
+  const isEditingStep = Boolean(editingStepId);
+  const isEditingLog = Boolean(editingLogId);
 
   const resetStepEditForm = () => {
     setEditingStepId(null);
     setEditingStepTitle("");
     setEditingStepDescription("");
     setEditingStepStatus("todo");
+    setEditingStepParentId("");
+    setEditingStepOriginalParentId("");
+    setStepEscWarning(null);
+  };
+
+  const resetNewStepForm = () => {
+    setNewStepTitle("");
+    setNewStepParentId("");
+    setNewStepDescription("");
+    setNewStepStatus("todo");
+    setStepEscWarning(null);
   };
 
   const resetWorkLogEditForm = () => {
@@ -282,6 +330,15 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingLogMessage("");
     setEditingLogStepId("");
     setEditingLogTags("");
+    setLogEscWarning(null);
+  };
+
+  const resetNewLogForm = () => {
+    setNewLogMessage("");
+    setNewLogStepId("");
+    setNewLogType("note");
+    setNewLogTags(defaultTaskTags);
+    setLogEscWarning(null);
   };
 
   const resetTaskEditForm = () => {
@@ -292,9 +349,10 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setTaskTagsInput("");
     setTaskDueDateInput("");
     setTaskFormError(null);
+    setTaskEscWarning(null);
   };
 
-  const startTaskEdit = () => {
+  const openTaskModal = () => {
     if (!task) return;
     setTaskTitleInput(task.title);
     setTaskDescriptionInput(task.description ?? "");
@@ -303,13 +361,19 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setTaskTagsInput(task.tags?.join(", ") ?? "");
     setTaskDueDateInput(toDateInputValue(task.dueDate));
     setTaskFormError(null);
-    setIsEditingTask(true);
+    taskTextSnapshot.current = {
+      title: task.title.trim(),
+      description: (task.description ?? "").trim(),
+      tags: (task.tags?.join(", ") ?? "").trim(),
+    };
+    setTaskEscWarning(null);
+    setIsTaskModalOpen(true);
   };
 
-  const cancelTaskEdit = () => {
+  function closeTaskModal() {
     resetTaskEditForm();
-    setIsEditingTask(false);
-  };
+    setIsTaskModalOpen(false);
+  }
 
   const handleTaskEditSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -340,7 +404,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
         tags: tags.length > 0 ? tags : undefined,
         dueDate: dueDateIso,
       });
-      cancelTaskEdit();
+      closeTaskModal();
     } catch (error) {
       console.error(error);
       setTaskFormError("Errore durante il salvataggio del task.");
@@ -352,19 +416,21 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   useEffect(() => {
     if (editingStepId && !taskSteps.some((step) => step.id === editingStepId)) {
       resetStepEditForm();
+      setIsStepModalOpen(false);
     }
   }, [editingStepId, taskSteps]);
 
   useEffect(() => {
     if (editingLogId && !taskLogs.some((log) => log.id === editingLogId)) {
       resetWorkLogEditForm();
+      setIsLogModalOpen(false);
     }
   }, [editingLogId, taskLogs]);
 
   useEffect(() => {
     if (!task) {
       resetTaskEditForm();
-      setIsEditingTask(false);
+      setIsTaskModalOpen(false);
     }
   }, [task]);
 
@@ -373,6 +439,143 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       setNewLogTags(defaultTaskTags);
     }
   }, [defaultTaskTags, newLogTags]);
+
+  useEffect(() => {
+    if (!isTaskModalOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const snapshot = taskTextSnapshot.current;
+      const hasTextChanges =
+        taskTitleInput.trim() !== snapshot.title ||
+        taskDescriptionInput.trim() !== snapshot.description ||
+        taskTagsInput.trim() !== snapshot.tags;
+      if (!hasTextChanges && !isTaskSaving) {
+        event.preventDefault();
+        closeTaskModal();
+      } else if (hasTextChanges) {
+        setTaskEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isTaskModalOpen,
+    taskTitleInput,
+    taskDescriptionInput,
+    taskTagsInput,
+    isTaskSaving,
+    closeTaskModal,
+  ]);
+
+  useEffect(() => {
+    if (!isTaskModalOpen || !taskEscWarning) return;
+    const snapshot = taskTextSnapshot.current;
+    const hasTextChanges =
+      taskTitleInput.trim() !== snapshot.title ||
+      taskDescriptionInput.trim() !== snapshot.description ||
+      taskTagsInput.trim() !== snapshot.tags;
+    if (!hasTextChanges) {
+      setTaskEscWarning(null);
+    }
+  }, [isTaskModalOpen, taskEscWarning, taskTitleInput, taskDescriptionInput, taskTagsInput]);
+
+  useEffect(() => {
+    if (!isStepModalOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const snapshot = stepTextSnapshot.current;
+      const currentTitle = (isEditingStep ? editingStepTitle : newStepTitle).trim();
+      const currentDescription = (
+        isEditingStep ? editingStepDescription : newStepDescription
+      ).trim();
+      const hasTextChanges =
+        currentTitle !== snapshot.title || currentDescription !== snapshot.description;
+      if (!hasTextChanges) {
+        event.preventDefault();
+        closeStepModal();
+      } else if (hasTextChanges) {
+        setStepEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isStepModalOpen,
+    isEditingStep,
+    editingStepTitle,
+    editingStepDescription,
+    newStepTitle,
+    newStepDescription,
+    closeStepModal,
+  ]);
+
+  useEffect(() => {
+    if (!isStepModalOpen || !stepEscWarning) return;
+    const snapshot = stepTextSnapshot.current;
+    const currentTitle = (isEditingStep ? editingStepTitle : newStepTitle).trim();
+    const currentDescription = (
+      isEditingStep ? editingStepDescription : newStepDescription
+    ).trim();
+    const hasTextChanges =
+      currentTitle !== snapshot.title || currentDescription !== snapshot.description;
+    if (!hasTextChanges) {
+      setStepEscWarning(null);
+    }
+  }, [
+    isStepModalOpen,
+    stepEscWarning,
+    isEditingStep,
+    editingStepTitle,
+    editingStepDescription,
+    newStepTitle,
+    newStepDescription,
+  ]);
+
+  useEffect(() => {
+    if (!isLogModalOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const snapshot = logTextSnapshot.current;
+      const currentMessage = (isEditingLog ? editingLogMessage : newLogMessage).trim();
+      const currentTags = (isEditingLog ? editingLogTags : newLogTags).trim();
+      const hasTextChanges = currentMessage !== snapshot.message || currentTags !== snapshot.tags;
+      if (!hasTextChanges) {
+        event.preventDefault();
+        closeLogModal();
+      } else if (hasTextChanges) {
+        setLogEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isLogModalOpen,
+    isEditingLog,
+    editingLogMessage,
+    editingLogTags,
+    newLogMessage,
+    newLogTags,
+    closeLogModal,
+  ]);
+
+  useEffect(() => {
+    if (!isLogModalOpen || !logEscWarning) return;
+    const snapshot = logTextSnapshot.current;
+    const currentMessage = (isEditingLog ? editingLogMessage : newLogMessage).trim();
+    const currentTags = (isEditingLog ? editingLogTags : newLogTags).trim();
+    const hasTextChanges = currentMessage !== snapshot.message || currentTags !== snapshot.tags;
+    if (!hasTextChanges) {
+      setLogEscWarning(null);
+    }
+  }, [
+    isLogModalOpen,
+    logEscWarning,
+    isEditingLog,
+    editingLogMessage,
+    editingLogTags,
+    newLogMessage,
+    newLogTags,
+  ]);
 
   if (!isHydrated) {
     return (
@@ -414,10 +617,22 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       order: nextOrder,
     });
 
-    setNewStepTitle("");
-    setNewStepParentId("");
-    setNewStepDescription("");
-    setNewStepStatus("todo");
+    resetNewStepForm();
+    setIsStepModalOpen(false);
+  };
+
+  function closeStepModal() {
+    resetStepEditForm();
+    resetNewStepForm();
+    setIsStepModalOpen(false);
+  }
+
+  const openNewStepModal = () => {
+    resetStepEditForm();
+    resetNewStepForm();
+    stepTextSnapshot.current = { title: "", description: "" };
+    setStepEscWarning(null);
+    setIsStepModalOpen(true);
   };
 
   const startEditingStep = (stepId: string) => {
@@ -427,18 +642,37 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingStepTitle(step.title);
     setEditingStepDescription(step.description ?? "");
     setEditingStepStatus(step.status);
+    setEditingStepParentId(step.parentStepId ?? "");
+    setEditingStepOriginalParentId(step.parentStepId ?? "");
+    stepTextSnapshot.current = {
+      title: step.title.trim(),
+      description: (step.description ?? "").trim(),
+    };
+    setStepEscWarning(null);
+    setIsStepModalOpen(true);
   };
 
   const handleEditStepSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editingStepId || !editingStepTitle.trim()) return;
 
-    await updateStep(editingStepId, {
+    const nextParentId = editingStepParentId || undefined;
+    const parentChanged = editingStepOriginalParentId !== (nextParentId ?? "");
+    const updatePayload: Partial<Step> = {
       title: editingStepTitle.trim(),
       description: editingStepDescription.trim() || undefined,
       status: editingStepStatus,
-    });
+      parentStepId: nextParentId,
+    };
+    if (parentChanged) {
+      const siblingOrders = taskSteps
+        .filter((step) => step.parentStepId === nextParentId && step.id !== editingStepId)
+        .map((step) => step.order);
+      updatePayload.order = siblingOrders.length > 0 ? Math.max(...siblingOrders) + 1 : 1;
+    }
+    await updateStep(editingStepId, updatePayload);
     resetStepEditForm();
+    setIsStepModalOpen(false);
   };
 
   const handleAddWorkLog = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -455,11 +689,26 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       timestamp: new Date().toISOString(),
     });
 
-    setNewLogMessage("");
-    setNewLogStepId("");
-    setNewLogType("note");
-    setNewLogTags(defaultTaskTags);
+    resetNewLogForm();
+    setIsLogModalOpen(false);
   };
+
+  const openNewLogModal = () => {
+    resetWorkLogEditForm();
+    resetNewLogForm();
+    logTextSnapshot.current = {
+      message: "",
+      tags: (defaultTaskTags ?? "").trim(),
+    };
+    setLogEscWarning(null);
+    setIsLogModalOpen(true);
+  };
+
+  function closeLogModal() {
+    resetWorkLogEditForm();
+    resetNewLogForm();
+    setIsLogModalOpen(false);
+  }
 
   const startEditingLog = (logId: string) => {
     const log = taskLogs.find((candidate) => candidate.id === logId);
@@ -469,6 +718,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingLogMessage(log.message ?? "");
     setEditingLogStepId(log.stepId ?? "");
     setEditingLogTags(log.tags.join(", "));
+    logTextSnapshot.current = {
+      message: (log.message ?? "").trim(),
+      tags: log.tags.join(", ").trim(),
+    };
+    setLogEscWarning(null);
+    setIsLogModalOpen(true);
   };
 
   const handleEditLogSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -482,6 +737,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       tags,
     });
     resetWorkLogEditForm();
+    setIsLogModalOpen(false);
   };
 
   const handleDeleteLog = async (logId: string) => {
@@ -515,7 +771,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             <p className="text-xs uppercase tracking-wide text-slate-500">Task</p>
             <h1 className="text-3xl font-bold text-slate-900">{task.title}</h1>
             {task.description ? (
-              <p className="mt-2 text-slate-600">{task.description}</p>
+              <p className="mt-2 whitespace-pre-wrap text-slate-600">{task.description}</p>
             ) : null}
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -536,9 +792,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             <button
               type="button"
               className="text-xs font-semibold text-slate-600 transition hover:text-slate-900"
-              onClick={() => (isEditingTask ? cancelTaskEdit() : startTaskEdit())}
+              onClick={openTaskModal}
             >
-              {isEditingTask ? "Chiudi modifica" : "Modifica Task"}
+              Modifica Task
             </button>
             <button
               type="button"
@@ -582,105 +838,126 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             ))}
           </div>
         ) : null}
-        {isEditingTask ? (
-          <form
-            className="mt-6 space-y-4 rounded-2xl border border-slate-100 bg-slate-50 p-5"
-            onSubmit={handleTaskEditSubmit}
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-700">Modifica Task</p>
-              <button
-                type="button"
-                className="text-xs text-slate-500 hover:text-slate-700"
-                onClick={cancelTaskEdit}
-                disabled={isTaskSaving}
-              >
-                Annulla
-              </button>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Titolo *</label>
-              <input
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={taskTitleInput}
-                onChange={(event) => setTaskTitleInput(event.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-600">Descrizione</label>
-              <textarea
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                rows={3}
-                value={taskDescriptionInput}
-                onChange={(event) => setTaskDescriptionInput(event.target.value)}
-                placeholder="Dettagli o note aggiuntive"
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Status</label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={taskStatusInput}
-                  onChange={(event) => setTaskStatusInput(event.target.value as TaskStatus)}
+        {isTaskModalOpen ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
+            <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Task</p>
+                  <h2 className="text-2xl font-semibold text-slate-900">Modifica Task</h2>
+                </div>
+                <button
+                  className="text-slate-500 transition hover:text-slate-900"
+                  onClick={closeTaskModal}
+                  disabled={isTaskSaving}
                 >
-                  {TASK_STATUS_OPTIONS.map((statusOption) => (
-                    <option key={statusOption} value={statusOption}>
-                      {statusOption.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
+                  X
+                </button>
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Priorità</label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={taskPriorityInput ?? ""}
-                  onChange={(event) =>
-                    setTaskPriorityInput(
-                      event.target.value ? (event.target.value as Task["priority"]) : undefined,
-                    )
-                  }
-                >
-                  <option value="">Nessuna</option>
-                  {TASK_PRIORITY_OPTIONS.map((priorityOption) => (
-                    <option key={priorityOption} value={priorityOption}>
-                      {priorityOption}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <form className="mt-6 space-y-4" onSubmit={handleTaskEditSubmit}>
+                {taskEscWarning ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {taskEscWarning}
+                  </p>
+                ) : null}
+                <div>
+                  <label className="text-sm font-medium text-slate-600">Titolo *</label>
+                  <input
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    value={taskTitleInput}
+                    onChange={(event) => setTaskTitleInput(event.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-600">Descrizione</label>
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    rows={3}
+                    value={taskDescriptionInput}
+                    onChange={(event) => setTaskDescriptionInput(event.target.value)}
+                    placeholder="Dettagli o note aggiuntive"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Status</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={taskStatusInput}
+                      onChange={(event) => setTaskStatusInput(event.target.value as TaskStatus)}
+                    >
+                      {TASK_STATUS_OPTIONS.map((statusOption) => (
+                        <option key={statusOption} value={statusOption}>
+                          {statusOption.replace("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Priority</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={taskPriorityInput ?? ""}
+                      onChange={(event) =>
+                        setTaskPriorityInput(
+                          event.target.value
+                            ? (event.target.value as Task["priority"])
+                            : undefined,
+                        )
+                      }
+                    >
+                      <option value="">Nessuna</option>
+                      {TASK_PRIORITY_OPTIONS.map((priorityOption) => (
+                        <option key={priorityOption} value={priorityOption}>
+                          {priorityOption}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Due date</label>
+                    <input
+                      type="date"
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={taskDueDateInput}
+                      onChange={(event) => setTaskDueDateInput(event.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-600">Tags (comma)</label>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={taskTagsInput}
+                      onChange={(event) => setTaskTagsInput(event.target.value)}
+                      placeholder="design,backend"
+                    />
+                  </div>
+                </div>
+                {taskFormError ? <p className="text-sm text-rose-600">{taskFormError}</p> : null}
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                    onClick={closeTaskModal}
+                    disabled={isTaskSaving}
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    disabled={isTaskSaving}
+                  >
+                    {isTaskSaving ? "Salvataggio..." : "Salva Task"}
+                  </button>
+                </div>
+              </form>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-sm font-medium text-slate-600">Due date</label>
-                <input
-                  type="date"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={taskDueDateInput}
-                  onChange={(event) => setTaskDueDateInput(event.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-600">Tags (comma)</label>
-                <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={taskTagsInput}
-                  onChange={(event) => setTaskTagsInput(event.target.value)}
-                  placeholder="design,backend"
-                />
-              </div>
-            </div>
-            {taskFormError ? <p className="text-sm text-rose-600">{taskFormError}</p> : null}
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              disabled={isTaskSaving}
-            >
-              {isTaskSaving ? "Salvataggio..." : "Salva Task"}
-            </button>
-          </form>
+          </div>
         ) : null}
       </section>
 
@@ -688,7 +965,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-xl font-semibold text-slate-900">Steps</h2>
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
               <span>Filtro stato</span>
               <select
                 className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
@@ -704,10 +981,17 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+                onClick={openNewStepModal}
+              >
+                + Nuovo Step
+              </button>
             </div>
           </div>
           {taskSteps.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Nessun passo ancora, aggiungine uno.</p>
+            <p className="mt-4 text-sm text-slate-500">Ancora nessuno step, aggiungine uno.</p>
           ) : filteredStepTree.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
               Nessuno step con lo stato selezionato.
@@ -727,106 +1011,136 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             </div>
           )}
 
-          {editingStepId ? (
-            <form
-              className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
-              onSubmit={handleEditStepSubmit}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Modifica step esistente</p>
-                <button
-                  type="button"
-                  className="text-xs text-slate-500 hover:text-slate-700"
-                  onClick={resetStepEditForm}
+          {isStepModalOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
+              <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Step</p>
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      {isEditingStep ? "Modifica Step" : "Nuovo Step"}
+                    </h3>
+                  </div>
+                  <button
+                    className="text-slate-500 transition hover:text-slate-900"
+                    onClick={closeStepModal}
+                  >
+                    X
+                  </button>
+                </div>
+                <form
+                  className="mt-6 space-y-4"
+                  onSubmit={isEditingStep ? handleEditStepSubmit : handleAddStep}
                 >
-                  Annulla
-                </button>
+                  {stepEscWarning ? (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {stepEscWarning}
+                    </p>
+                  ) : null}
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Titolo *</label>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingStep ? editingStepTitle : newStepTitle}
+                      onChange={(event) =>
+                        isEditingStep
+                          ? setEditingStepTitle(event.target.value)
+                          : setNewStepTitle(event.target.value)
+                      }
+                      placeholder="Titolo step"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Descrizione</label>
+                    <textarea
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      rows={3}
+                      value={isEditingStep ? editingStepDescription : newStepDescription}
+                      onChange={(event) =>
+                        isEditingStep
+                          ? setEditingStepDescription(event.target.value)
+                          : setNewStepDescription(event.target.value)
+                      }
+                      placeholder="Descrizione step"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Step padre</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingStep ? editingStepParentId : newStepParentId}
+                      onChange={(event) =>
+                        isEditingStep
+                          ? setEditingStepParentId(event.target.value)
+                          : setNewStepParentId(event.target.value)
+                      }
+                    >
+                      <option value="">Step principale</option>
+                      {orderedSteps
+                        .filter((step) => {
+                          if (!isEditingStep) return true;
+                          if (step.id === editingStepId) return false;
+                          return !editingStepDescendantIds.has(step.id);
+                        })
+                        .map((step) => (
+                          <option key={step.id} value={step.id}>
+                            Substep di #{step.order}: {step.title}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Status</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingStep ? editingStepStatus : newStepStatus}
+                      onChange={(event) =>
+                        isEditingStep
+                          ? setEditingStepStatus(event.target.value as StepStatus)
+                          : setNewStepStatus(event.target.value as StepStatus)
+                      }
+                    >
+                      {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                      onClick={closeStepModal}
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      {isEditingStep ? "Salva modifiche" : "Salva Step"}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={editingStepTitle}
-                onChange={(event) => setEditingStepTitle(event.target.value)}
-                placeholder="Titolo step"
-              />
-              <textarea
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                rows={3}
-                value={editingStepDescription}
-                onChange={(event) => setEditingStepDescription(event.target.value)}
-                placeholder="Descrizione step"
-              />
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={editingStepStatus}
-                onChange={(event) => setEditingStepStatus(event.target.value as StepStatus)}
-              >
-                {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Salva modifiche
-              </button>
-            </form>
-          ) : null}
-
-          <form className="mt-6 space-y-3" onSubmit={handleAddStep}>
-            <p className="text-sm font-medium text-slate-700">Aggiungi Step</p>
-            <input
-              type="text"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Titolo step"
-              value={newStepTitle}
-              onChange={(event) => setNewStepTitle(event.target.value)}
-            />
-            <textarea
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Descrizione (facoltativa)"
-              rows={3}
-              value={newStepDescription}
-              onChange={(event) => setNewStepDescription(event.target.value)}
-            />
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:flex-1"
-                value={newStepParentId}
-                onChange={(event) => setNewStepParentId(event.target.value)}
-              >
-                <option value="">Step principale</option>
-                {orderedSteps.map((step) => (
-                  <option key={step.id} value={step.id}>
-                    Substep di #{step.order}: {step.title}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:flex-1"
-                value={newStepStatus}
-                onChange={(event) => setNewStepStatus(event.target.value as StepStatus)}
-              >
-                {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
             </div>
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-            >
-              Salva Step
-            </button>
-          </form>
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Work Log</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">Work Log</h2>
+            <button
+              type="button"
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+              onClick={openNewLogModal}
+            >
+              + Nuovo Log
+            </button>
+          </div>
           {orderedLogs.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
               Nessun log ancora, registra una nota o sessione di lavoro.
@@ -884,117 +1198,118 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             </ol>
           )}
 
-          {editingLogId ? (
-            <form
-              className="mt-6 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4"
-              onSubmit={handleEditLogSubmit}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-700">Modifica WorkLog</p>
-                <button
-                  type="button"
-                  className="text-xs text-slate-500 hover:text-slate-700"
-                  onClick={resetWorkLogEditForm}
+          {isLogModalOpen ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
+              <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Work Log</p>
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      {isEditingLog ? "Modifica Work Log" : "Nuovo Work Log"}
+                    </h3>
+                  </div>
+                  <button
+                    className="text-slate-500 transition hover:text-slate-900"
+                    onClick={closeLogModal}
+                  >
+                    X
+                  </button>
+                </div>
+                <form
+                  className="mt-6 space-y-4"
+                  onSubmit={isEditingLog ? handleEditLogSubmit : handleAddWorkLog}
                 >
-                  Annulla
-                </button>
+                  {logEscWarning ? (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {logEscWarning}
+                    </p>
+                  ) : null}
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Tipo</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingLog ? editingLogType : newLogType}
+                      onChange={(event) =>
+                        isEditingLog
+                          ? setEditingLogType(event.target.value as WorkLogType)
+                          : setNewLogType(event.target.value as WorkLogType)
+                      }
+                    >
+                      {Object.entries(WORKLOG_TYPE_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Messaggio</label>
+                    <textarea
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      rows={3}
+                      value={isEditingLog ? editingLogMessage : newLogMessage}
+                      onChange={(event) =>
+                        isEditingLog
+                          ? setEditingLogMessage(event.target.value)
+                          : setNewLogMessage(event.target.value)
+                      }
+                      placeholder="Descrivi cosa hai fatto..."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Step</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingLog ? editingLogStepId : newLogStepId}
+                      onChange={(event) =>
+                        isEditingLog
+                          ? setEditingLogStepId(event.target.value)
+                          : setNewLogStepId(event.target.value)
+                      }
+                    >
+                      <option value="">Nessun step</option>
+                      {orderedSteps.map((step) => (
+                        <option key={step.id} value={step.id}>
+                          #{step.order} - {step.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Tag (comma)</label>
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingLog ? editingLogTags : newLogTags}
+                      onChange={(event) =>
+                        isEditingLog
+                          ? setEditingLogTags(event.target.value)
+                          : setNewLogTags(event.target.value)
+                      }
+                      placeholder="cliente,progetto,attivita"
+                    />
+                    <p className="mt-2 text-xs text-slate-500">
+                      Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                      onClick={closeLogModal}
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      {isEditingLog ? "Salva Work Log" : "Registra Log"}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={editingLogType}
-                onChange={(event) => setEditingLogType(event.target.value as WorkLogType)}
-              >
-                {Object.entries(WORKLOG_TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <textarea
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                rows={3}
-                value={editingLogMessage}
-                onChange={(event) => setEditingLogMessage(event.target.value)}
-                placeholder="Aggiorna la nota"
-              />
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={editingLogStepId}
-                onChange={(event) => setEditingLogStepId(event.target.value)}
-              >
-                <option value="">Nessun step</option>
-                {orderedSteps.map((step) => (
-                  <option key={step.id} value={step.id}>
-                    #{step.order} - {step.title}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={editingLogTags}
-                onChange={(event) => setEditingLogTags(event.target.value)}
-                placeholder="Tag (comma)"
-              />
-              <p className="text-xs text-slate-500">
-                Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
-              </p>
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Salva WorkLog
-              </button>
-            </form>
+            </div>
           ) : null}
-
-          <form className="mt-6 space-y-3" onSubmit={handleAddWorkLog}>
-            <p className="text-sm font-medium text-slate-700">Aggiungi Log</p>
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={newLogType}
-              onChange={(event) => setNewLogType(event.target.value as WorkLogType)}
-            >
-              {Object.entries(WORKLOG_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <textarea
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Descrivi cosa hai fatto..."
-              rows={3}
-              value={newLogMessage}
-              onChange={(event) => setNewLogMessage(event.target.value)}
-            />
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={newLogStepId}
-              onChange={(event) => setNewLogStepId(event.target.value)}
-            >
-              <option value="">Nessun step</option>
-              {orderedSteps.map((step) => (
-                <option key={step.id} value={step.id}>
-                  #{step.order} - {step.title}
-                </option>
-              ))}
-            </select>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={newLogTags}
-              onChange={(event) => setNewLogTags(event.target.value)}
-              placeholder="Tag (comma)"
-            />
-            <p className="text-xs text-slate-500">
-              Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
-            </p>
-            <button
-              type="submit"
-              className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-            >
-              Registra Log
-            </button>
-          </form>
         </div>
       </section>
     </main>

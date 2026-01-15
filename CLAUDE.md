@@ -23,9 +23,9 @@ Keep information concise and actionable.
 ## Main features and modules
 - Auth: email/password sign-in and sign-up (`src/hooks/useAuth.tsx`).
 - Tasks list: filters by status and sorts by priority (`src/app/tasks/page.tsx`).
-- Task detail: edit task, steps, and work logs in one page (`src/app/tasks/[id]/page.tsx`).
+- Task detail: edit task, steps, and work logs in modals with Esc warnings on unsaved text (`src/app/tasks/[id]/page.tsx`).
 - Steps: status filters and readable status badges on task detail.
-- Steps: nested steps with ordering and status updates.
+- Steps: nested steps with ordering, status updates, and parent reassignment.
 - Work logs: start/stop/note entries per task or step with tags, prefilled from task tags.
 - Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
