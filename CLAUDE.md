@@ -25,16 +25,16 @@ Keep information concise and actionable.
 - Tasks list: filters by status and sorts by priority (`src/app/tasks/page.tsx`).
 - Task detail: edit task, steps, and work logs in one page (`src/app/tasks/[id]/page.tsx`).
 - Steps: nested steps with ordering and status updates.
-- Work logs: start/stop/note entries per task or step.
-- Timeline: chronological work log view with filters (`src/app/timeline/page.tsx`).
-- Report: monthly summary by task with totals and note highlights (`src/app/report/page.tsx`).
+- Work logs: start/stop/note entries per task or step with tags.
+- Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
+- Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
 - Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
 - Shared UI: top navigation and auth gate (`src/components`).
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
 - Step: order, optional parentStepId, status, userId.
-- WorkLog: type, message, timestamp, optional stepId, userId.
+- WorkLog: type, message, timestamp, tags, optional stepId, userId.
 - All timestamps are ISO strings; UI converts them for display.
 
 ## Current project state
@@ -74,7 +74,6 @@ Keep information concise and actionable.
 - Lack of tests increases regression risk for refactors.
 
 ## Suggested next additions (from docs)
-- WorkLog tags and tag filtering.
 - Step status filters on task detail.
 - Preset work logs / quick log actions.
 - Start-stop timer and calendar heatmap.

@@ -42,7 +42,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Every document must include `userId` for security rules.
 - `tasks` store status, priority, tags, dueDate, timestamps.
 - `steps` store order and optional parentStepId (nested steps).
-- `workLogs` store type (`start` | `stop` | `note`) and timestamp.
+- `workLogs` store type (`start` | `stop` | `note`), timestamp, and tags.
 
 ## Domain types
 - `src/lib/types.ts` defines canonical domain shapes.
@@ -71,6 +71,8 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `buildStepsByTask` returns step totals by task.
 - `buildTaskActivity` computes durations and last log per task.
 - `buildMonthlyReportSummary` aggregates per-task totals and highlights for reports.
+- `groupWorkLogsByTag` groups logs by tag for filters.
+- `buildTaskTagSummary` summarizes top tags per task for chips.
 - `describePriority` normalizes priority labels.
 
 ## Firebase setup

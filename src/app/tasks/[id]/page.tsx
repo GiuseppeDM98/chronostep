@@ -54,9 +54,15 @@ const buildStepTree = (taskSteps: Step[]) => {
 };
 
 const formatDate = (iso?: string) => {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleDateString();
 };
+
+const parseTagsInput = (value: string) =>
+  value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 
 const toDateInputValue = (iso?: string) => {
   if (!iso) return "";
@@ -185,10 +191,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [newLogType, setNewLogType] = useState<WorkLogType>("note");
   const [newLogMessage, setNewLogMessage] = useState("");
   const [newLogStepId, setNewLogStepId] = useState("");
+  const [newLogTags, setNewLogTags] = useState("");
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editingLogType, setEditingLogType] = useState<WorkLogType>("note");
   const [editingLogMessage, setEditingLogMessage] = useState("");
   const [editingLogStepId, setEditingLogStepId] = useState("");
+  const [editingLogTags, setEditingLogTags] = useState("");
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [taskTitleInput, setTaskTitleInput] = useState("");
   const [taskDescriptionInput, setTaskDescriptionInput] = useState("");
@@ -198,6 +206,8 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [taskDueDateInput, setTaskDueDateInput] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [isTaskSaving, setIsTaskSaving] = useState(false);
+
+  const logTagLimit = 3;
 
   const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
   const orderedSteps = useMemo(
@@ -228,6 +238,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingLogType("note");
     setEditingLogMessage("");
     setEditingLogStepId("");
+    setEditingLogTags("");
   };
 
   const resetTaskEditForm = () => {
@@ -384,11 +395,13 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const handleAddWorkLog = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newLogMessage.trim()) return;
+    const tags = parseTagsInput(newLogTags);
 
     await createWorkLog({
       taskId: task.id,
       stepId: newLogStepId || undefined,
       message: newLogMessage.trim(),
+      tags: tags.length > 0 ? tags : [],
       type: newLogType,
       timestamp: new Date().toISOString(),
     });
@@ -396,6 +409,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setNewLogMessage("");
     setNewLogStepId("");
     setNewLogType("note");
+    setNewLogTags("");
   };
 
   const startEditingLog = (logId: string) => {
@@ -405,15 +419,18 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingLogType(log.type);
     setEditingLogMessage(log.message ?? "");
     setEditingLogStepId(log.stepId ?? "");
+    setEditingLogTags(log.tags.join(", "));
   };
 
   const handleEditLogSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editingLogId) return;
+    const tags = parseTagsInput(editingLogTags);
     await updateWorkLog(editingLogId, {
       type: editingLogType,
       message: editingLogMessage.trim() || undefined,
       stepId: editingLogStepId || undefined,
+      tags,
     });
     resetWorkLogEditForm();
   };
@@ -746,6 +763,23 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
             <ol className="mt-4 space-y-4">
               {orderedLogs.map((log) => (
                 <li key={log.id} className="rounded-lg border border-slate-100 p-4">
+                  {log.tags.length > 0 ? (
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      {log.tags.slice(0, logTagLimit).map((tag) => (
+                        <span
+                          key={`${log.id}-tag-${tag}`}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                      {log.tags.length > logTagLimit ? (
+                        <span className="rounded-full bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
+                          +{log.tags.length - logTagLimit}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="font-medium">{WORKLOG_TYPE_LABELS[log.type]}</span>
                     <time>{new Date(log.timestamp).toLocaleString()}</time>
@@ -823,6 +857,15 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                   </option>
                 ))}
               </select>
+              <input
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={editingLogTags}
+                onChange={(event) => setEditingLogTags(event.target.value)}
+                placeholder="Tag (comma)"
+              />
+              <p className="text-xs text-slate-500">
+                Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
+              </p>
               <button
                 type="submit"
                 className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
@@ -864,6 +907,15 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                 </option>
               ))}
             </select>
+            <input
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              value={newLogTags}
+              onChange={(event) => setNewLogTags(event.target.value)}
+              placeholder="Tag (comma)"
+            />
+            <p className="text-xs text-slate-500">
+              Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
+            </p>
             <button
               type="submit"
               className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"

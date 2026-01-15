@@ -63,6 +63,7 @@ export interface WorkLog {
   taskId: EntityId;
   stepId?: EntityId;
   message?: string;
+  tags: string[];
   type: WorkLogType;
   timestamp: IsoDateTimeString;
   durationMinutes?: number;

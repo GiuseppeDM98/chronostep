@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import AuthGate from "../../components/AuthGate";
 import { useTaskStore } from "../../hooks/useTaskStore";
-import { buildMonthlyReportSummary } from "../../lib/insights";
+import {
+  buildMonthlyReportSummary,
+  buildTaskTagSummary,
+  groupWorkLogsByTag,
+} from "../../lib/insights";
 
 const MONTH_OPTIONS = [
   { value: "all", label: "Tutti i mesi" },
@@ -36,6 +40,8 @@ const ReportPage = () => {
   const { workLogs, tasks, isHydrated } = useTaskStore();
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [selectedTag, setSelectedTag] = useState<string>("all");
+  const logsByTag = useMemo(() => groupWorkLogsByTag(workLogs), [workLogs]);
 
   const taskLookup = useMemo(() => {
     const map = new Map(tasks.map((task) => [task.id, task.title]));
@@ -50,9 +56,19 @@ const ReportPage = () => {
     return Array.from(set).sort((a, b) => b - a);
   }, [workLogs]);
 
+  const availableTags = useMemo(
+    () => Array.from(logsByTag.keys()).sort((a, b) => a.localeCompare(b)),
+    [logsByTag],
+  );
+
+  const tagFilteredLogs = useMemo(
+    () => (selectedTag === "all" ? workLogs : logsByTag.get(selectedTag) ?? []),
+    [logsByTag, selectedTag, workLogs],
+  );
+
   const filteredLogs = useMemo(
     () =>
-      workLogs.filter((log) => {
+      tagFilteredLogs.filter((log) => {
         const date = new Date(log.timestamp);
         const yearPass =
           selectedYear === "all" || date.getFullYear().toString() === selectedYear;
@@ -60,11 +76,15 @@ const ReportPage = () => {
           selectedMonth === "all" || (date.getMonth() + 1).toString() === selectedMonth;
         return yearPass && monthPass;
       }),
-    [workLogs, selectedMonth, selectedYear],
+    [selectedMonth, selectedYear, tagFilteredLogs],
   );
 
   const reportEntries = useMemo(
     () => buildMonthlyReportSummary(filteredLogs),
+    [filteredLogs],
+  );
+  const tagSummaryByTask = useMemo(
+    () => buildTaskTagSummary(filteredLogs),
     [filteredLogs],
   );
 
@@ -88,6 +108,12 @@ const ReportPage = () => {
             <h1 className="text-3xl font-bold text-slate-900">Report mensile</h1>
             <p className="text-sm text-slate-500">
               Riepilogo ore e highlights delle note per task.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+            <p className="font-semibold text-slate-900">Tag: perché usarli</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Usa tag come cliente, progetto o tipo lavoro per isolare le attività nel report.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -114,6 +140,25 @@ const ReportPage = () => {
                 </option>
               ))}
             </select>
+            <select
+              value={selectedTag}
+              onChange={(event) => setSelectedTag(event.target.value)}
+              className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
+              disabled={availableTags.length === 0}
+            >
+              <option value="all">Tutti i tag</option>
+              {availableTags.length === 0 ? (
+                <option value="" disabled>
+                  Nessun tag
+                </option>
+              ) : (
+                availableTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
         </header>
 
@@ -135,43 +180,63 @@ const ReportPage = () => {
                 {reportEntries.length} task con attivita
               </span>
             </div>
-            {reportEntries.map((entry) => (
-              <article
-                key={entry.taskId}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {taskLookup.get(entry.taskId) ?? "Task sconosciuto"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {entry.logCount} log • {formatMinutes(entry.totalMinutes)}
-                    </p>
+            {reportEntries.map((entry) => {
+              const summary = tagSummaryByTask.get(entry.taskId);
+              return (
+                <article
+                  key={entry.taskId}
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  {summary && summary.tags.length > 0 ? (
+                    <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      {summary.tags.map((tag) => (
+                        <span
+                          key={`${entry.taskId}-tag-${tag}`}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                      {summary.overflowCount > 0 ? (
+                        <span className="rounded-full bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
+                          +{summary.overflowCount}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {taskLookup.get(entry.taskId) ?? "Task sconosciuto"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {entry.logCount} log  {formatMinutes(entry.totalMinutes)}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/tasks/${encodeURIComponent(entry.taskId)}`}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                    >
+                      Apri task
+                    </Link>
                   </div>
-                  <Link
-                    href={`/tasks/${encodeURIComponent(entry.taskId)}`}
-                    className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
-                  >
-                    Apri task
-                  </Link>
-                </div>
-                {entry.highlights.length > 0 ? (
-                  <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                    {entry.highlights.map((highlight, index) => (
-                      <li key={`${entry.taskId}-highlight-${index}`} className="flex gap-2">
-                        <span className="text-slate-400">•</span>
-                        <span>{highlight}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-500">
-                    Nessuna nota rilevante per questo task.
-                  </p>
-                )}
-              </article>
-            ))}
+                  {entry.highlights.length > 0 ? (
+                    <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                      {entry.highlights.map((highlight, index) => (
+                        <li key={`${entry.taskId}-highlight-${index}`} className="flex gap-2">
+                          <span className="text-slate-400"></span>
+                          <span>{highlight}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-500">
+                      Nessuna nota rilevante per questo task.
+                    </p>
+                  )}
+                </article>
+              );
+            })}
           </section>
         )}
       </main>

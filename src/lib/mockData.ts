@@ -114,6 +114,7 @@ export const workLogs: WorkLog[] = [
     type: "start",
     timestamp: "2025-01-10T08:35:00.000Z",
     message: "Kickoff repo initialization.",
+    tags: ["setup", "repo"],
   },
   {
     id: "worklog-2",
@@ -123,6 +124,7 @@ export const workLogs: WorkLog[] = [
     type: "note",
     timestamp: "2025-01-12T09:30:00.000Z",
     message: "ESLint config mostly done, need to revisit Prettier rules.",
+    tags: ["linting"],
   },
   {
     id: "worklog-3",
@@ -131,6 +133,7 @@ export const workLogs: WorkLog[] = [
     type: "note",
     timestamp: "2025-01-11T12:00:00.000Z",
     message: "Found three apps with progressive steps UI.",
+    tags: ["research", "ux"],
   },
   {
     id: "worklog-4",
@@ -141,5 +144,6 @@ export const workLogs: WorkLog[] = [
     timestamp: "2025-01-10T07:20:00.000Z",
     durationMinutes: 50,
     message: "Entry ready for publishing.",
+    tags: ["writing"],
   },
 ];

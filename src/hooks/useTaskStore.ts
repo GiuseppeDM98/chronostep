@@ -79,12 +79,14 @@ const toStepModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Step => {
 // Map Firestore work log documents into the canonical WorkLog shape with safe defaults.
 const toWorkLogModel = (docSnap: QueryDocumentSnapshot<DocumentData>): WorkLog => {
   const data = docSnap.data();
+  const tags = Array.isArray(data.tags) ? data.tags.filter(Boolean) : [];
   return {
     id: docSnap.id,
     userId: data.userId,
     taskId: data.taskId,
     stepId: data.stepId ?? undefined,
     message: data.message ?? undefined,
+    tags,
     type: data.type,
     timestamp: data.timestamp ?? new Date().toISOString(),
     durationMinutes: data.durationMinutes ?? undefined,
@@ -299,6 +301,7 @@ export const useTaskStore = () => {
         taskId: input.taskId,
         stepId: input.stepId ?? null,
         message: input.message ?? null,
+        tags: input.tags ?? [],
         type: input.type,
         timestamp,
         durationMinutes: input.durationMinutes ?? null,
@@ -316,6 +319,7 @@ export const useTaskStore = () => {
       const now = new Date().toISOString();
       const data: Record<string, unknown> = { updatedAt: now };
       if (input.message !== undefined) data.message = input.message ?? null;
+      if (input.tags !== undefined) data.tags = input.tags ?? [];
       if (input.type !== undefined) data.type = input.type;
       if (input.timestamp !== undefined) data.timestamp = input.timestamp;
       if (input.durationMinutes !== undefined) data.durationMinutes = input.durationMinutes ?? null;

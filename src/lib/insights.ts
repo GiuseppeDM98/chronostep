@@ -37,6 +37,55 @@ export type MonthlyReportEntry = {
   highlights: string[];
 };
 
+export type TaskTagSummary = {
+  tags: string[];
+  overflowCount: number;
+};
+
+// Group work logs by tag so UIs can build filters or rollups without re-scanning.
+export const groupWorkLogsByTag = (workLogs: WorkLog[]) => {
+  const map = new Map<string, WorkLog[]>();
+  workLogs.forEach((log) => {
+    log.tags.forEach((tag) => {
+      if (!tag) return;
+      const trimmed = tag.trim();
+      if (!trimmed) return;
+      const bucket = map.get(trimmed) ?? [];
+      bucket.push(log);
+      map.set(trimmed, bucket);
+    });
+  });
+  return map;
+};
+
+// Build per-task tag summaries for compact chip rendering in list views.
+export const buildTaskTagSummary = (workLogs: WorkLog[], limit = 3) => {
+  const map = new Map<string, Map<string, number>>();
+  workLogs.forEach((log) => {
+    if (!log.tags.length) return;
+    const taskTags = map.get(log.taskId) ?? new Map<string, number>();
+    log.tags.forEach((tag) => {
+      const trimmed = tag.trim();
+      if (!trimmed) return;
+      taskTags.set(trimmed, (taskTags.get(trimmed) ?? 0) + 1);
+    });
+    map.set(log.taskId, taskTags);
+  });
+
+  const summary = new Map<string, TaskTagSummary>();
+  map.forEach((counts, taskId) => {
+    const sorted = Array.from(counts.entries()).sort(
+      ([tagA, countA], [tagB, countB]) => countB - countA || tagA.localeCompare(tagB),
+    );
+    const tags = sorted.slice(0, limit).map(([tag]) => tag);
+    summary.set(taskId, {
+      tags,
+      overflowCount: Math.max(0, sorted.length - tags.length),
+    });
+  });
+  return summary;
+};
+
 // Derive per-task activity from work logs, handling explicit durations and start/stop sessions.
 export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
   // Sort ascending so start/stop sessions compute forward in time.
