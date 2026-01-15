@@ -37,6 +37,7 @@ const PRIORITY_ORDER: Record<NonNullable<Task["priority"]>, number> = {
 const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
 const TASK_PRIORITIES: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
 
+// Normalize priority labels for consistent UI copy.
 const formatPriority = (priority?: Task["priority"]) => {
   if (!priority) return "No priority";
   return `${priority.charAt(0).toUpperCase()}${priority.slice(1)}`;
@@ -126,6 +127,7 @@ const TasksPage = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const stepsByTask = useMemo(() => {
+    // Pre-compute step totals per task to keep render logic simple.
     const map = new Map<string, { total: number; done: number }>();
     tasks.forEach((task) => {
       map.set(task.id, { total: 0, done: 0 });
@@ -146,6 +148,7 @@ const TasksPage = () => {
   const filteredTasks = useMemo(() => {
     const byStatus =
       statusFilter === "all" ? tasks : tasks.filter((task) => task.status === statusFilter);
+    // Sort by priority first, then title to keep the list predictable.
     return [...byStatus].sort((taskA, taskB) => {
       const priorityA =
         taskA.priority !== undefined ? PRIORITY_ORDER[taskA.priority] : Number.POSITIVE_INFINITY;
@@ -187,6 +190,7 @@ const TasksPage = () => {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean) ?? [];
+      // Store due dates at UTC midnight to keep calendar math consistent across timezones.
       const dueDateIso = dueDate ? new Date(`${dueDate}T00:00:00.000Z`).toISOString() : undefined;
 
       await createTask({

@@ -5,6 +5,7 @@ export type StepSummary = {
   done: number;
 };
 
+// Aggregate step totals per task so UIs can render progress without re-scanning steps.
 export const buildStepsByTask = (steps: Step[]) => {
   const map = new Map<string, StepSummary>();
   steps.forEach((step) => {
@@ -29,7 +30,9 @@ export type TaskActivityResult = {
   taskActivity: Map<string, TaskActivitySummary>;
 };
 
+// Derive per-task activity from work logs, handling explicit durations and start/stop sessions.
 export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
+  // Sort ascending so start/stop sessions compute forward in time.
   const sortedLogs = [...workLogs].sort(
     (a, b) => new Date(a.timestamp).valueOf() - new Date(b.timestamp).valueOf(),
   );
@@ -51,6 +54,7 @@ export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
     }
 
     if (typeof log.durationMinutes === "number") {
+      // Clamp to at least 1 minute to keep UI chips meaningful and avoid zero-length logs.
       const bounded = Math.max(1, Math.round(log.durationMinutes));
       logDurations.set(log.id, bounded);
       entry.totalMinutes += bounded;
@@ -58,6 +62,7 @@ export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
       runningSessions.set(log.taskId, timestampMs);
     } else if (log.type === "stop" && runningSessions.has(log.taskId)) {
       const startTime = runningSessions.get(log.taskId)!;
+      // Use a minimum of 1 minute to avoid invisible sessions from short stop/start gaps.
       const duration = Math.max(1, Math.round((timestampMs - startTime) / 60000));
       logDurations.set(log.id, duration);
       entry.totalMinutes += duration;
@@ -70,11 +75,13 @@ export const buildTaskActivity = (workLogs: WorkLog[]): TaskActivityResult => {
   return { logDurations, taskActivity };
 };
 
+// Return a summary bucket even if the task has no steps yet.
 export const getTaskStepSummary = (
   map: Map<string, StepSummary>,
   taskId: string,
 ): StepSummary => map.get(taskId) ?? { total: 0, done: 0 };
 
+// Normalize priority labels for consistent UI copy.
 export const describePriority = (priority?: Task["priority"]) => {
   if (!priority) return "No priority";
   return `${priority.charAt(0).toUpperCase()}${priority.slice(1)}`;

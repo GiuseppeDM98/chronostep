@@ -15,6 +15,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
     event.preventDefault();
     setSubmitting(true);
     try {
+      // Switch between sign-in and sign-up flows using the same form state.
       if (mode === "signin") {
         await signIn(email, password);
       } else {
@@ -94,6 +95,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
               type="button"
               className="w-full text-sm text-slate-600 underline decoration-dashed underline-offset-4"
               onClick={() => {
+                // Reset auth errors when switching between sign-in and sign-up modes.
                 setMode(mode === "signin" ? "signup" : "signin");
                 clearError();
               }}
@@ -118,6 +120,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
           <button
             type="button"
             onClick={() => {
+              // Fire-and-forget sign-out; UI will update from auth state listener.
               void signOutUser();
             }}
             className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-slate-400"

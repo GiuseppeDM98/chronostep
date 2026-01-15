@@ -39,9 +39,11 @@ const daysBetween = (target: Date, from: Date) =>
 const monthLabel = (year: number, month: number) =>
   new Date(year, month).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
+// Build a calendar grid aligned to Monday and bucket tasks by due date (UTC day keys).
 const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
   const startOfMonth = new Date(year, month, 1);
-  const startOffset = (startOfMonth.getDay() + 6) % 7; // Monday as first column
+  // Shift JS Sunday=0 to Monday=0 so the grid aligns with Italian week layout.
+  const startOffset = (startOfMonth.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
 
@@ -62,6 +64,7 @@ const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
     if (dayOfMonth < 1 || dayOfMonth > daysInMonth) {
       days.push({ key: `blank-${cell}`, label: "", tasks: [], isCurrentMonth: false });
     } else {
+      // Use UTC midnight ISO keys to avoid timezone shifts when grouping due dates.
       const iso = new Date(Date.UTC(year, month, dayOfMonth)).toISOString().slice(0, 10);
       days.push({
         key: iso,
@@ -96,6 +99,7 @@ const InsightsPageContent = () => {
       .filter((task) => {
         if (!task.dueDate) return false;
         const due = new Date(task.dueDate);
+        // Keep a short horizon to focus the "next steps" list on imminent deadlines.
         return daysBetween(due, today) <= UPCOMING_WINDOW_DAYS;
       })
       .sort((a, b) => {
@@ -107,6 +111,7 @@ const InsightsPageContent = () => {
 
   const recentTasks = useMemo(() => {
     const threshold = new Date(today);
+    // Use a rolling window of recent activity instead of calendar weeks.
     threshold.setDate(today.getDate() - RECENT_ACTIVITY_DAYS);
     return tasks
       .filter((task) => {
@@ -177,6 +182,7 @@ const InsightsPageContent = () => {
     if (selectedDayKey && calendarDays.some((day) => day.key === selectedDayKey)) {
       return;
     }
+    // Auto-focus the first day with tasks so the detail panel is never empty on load.
     const firstWithTasks = calendarDays.find(
       (day) => day.isCurrentMonth && day.tasks.length > 0,
     );

@@ -12,6 +12,7 @@ type GroupedLogs = Array<{
   logs: WorkLog[];
 }>;
 
+// Format a log date with locale-aware day/month labels for section headers.
 const formatDate = (value: string) => {
   const date = new Date(value);
   return date.toLocaleDateString(undefined, {
@@ -22,6 +23,7 @@ const formatDate = (value: string) => {
   });
 };
 
+// Keep time display compact so log rows stay readable on mobile.
 const formatTime = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -79,12 +81,14 @@ const TimelinePage = () => {
           selectedMonth === "all" || (date.getMonth() + 1).toString() === selectedMonth;
         return yearPass && monthPass;
       })
+      // Sort newest first so the timeline reads top-down by recency.
       .sort(
         (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
       );
 
     const groups = new Map<string, typeof logs>();
     logs.forEach((log) => {
+      // Bucket by ISO day to keep timezone-safe grouping across locales.
       const dateKey = new Date(log.timestamp).toISOString().slice(0, 10);
       if (!groups.has(dateKey)) {
         groups.set(dateKey, []);

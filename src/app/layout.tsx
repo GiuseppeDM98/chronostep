@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   },
 };
 
+// Root layout keeps global styles and wraps providers for all routes.
 const RootLayout = ({ children }: { children: ReactNode }) => (
   <html lang="en">
     <body className="bg-slate-50 text-slate-900 antialiased">

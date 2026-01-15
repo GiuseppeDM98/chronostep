@@ -24,6 +24,7 @@ const WORKLOG_TYPE_LABELS: Record<WorkLogType, string> = {
 const TASK_STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
 const TASK_PRIORITY_OPTIONS: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
 
+// Build a stable step tree per task, keeping sibling order deterministic.
 const buildStepTree = (taskSteps: Step[]) => {
   const map = new Map<string, StepNode>();
 
@@ -34,6 +35,7 @@ const buildStepTree = (taskSteps: Step[]) => {
   const roots: StepNode[] = [];
 
   map.forEach((node) => {
+    // Only attach a node if its parent exists in the same task snapshot.
     if (node.parentStepId && map.has(node.parentStepId)) {
       map.get(node.parentStepId)!.children.push(node);
     } else {
@@ -42,6 +44,7 @@ const buildStepTree = (taskSteps: Step[]) => {
   });
 
   const sortNodes = (nodes: StepNode[]) => {
+    // Order is user-defined, so keep it stable across renders.
     nodes.sort((a, b) => a.order - b.order);
     nodes.forEach((child) => sortNodes(child.children));
   };
@@ -74,6 +77,7 @@ const StatusBadge = ({ status }: { status: Task["status"] }) => {
   );
 };
 
+// Recursive step list with inline status controls and edit actions.
 const StepTree = ({
   nodes,
   onStatusChange,
@@ -270,6 +274,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean) ?? [];
+      // Store due dates at UTC midnight to keep calendar math consistent across timezones.
       const dueDateIso = taskDueDateInput
         ? new Date(`${taskDueDateInput}T00:00:00.000Z`).toISOString()
         : undefined;
@@ -334,6 +339,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     if (!newStepTitle.trim()) return;
 
     const parentId = newStepParentId || undefined;
+    // Step order is scoped to siblings, so derive the next slot from the same parent.
     const siblingOrders = taskSteps
       .filter((step) => step.parentStepId === parentId)
       .map((step) => step.order);

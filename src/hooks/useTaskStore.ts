@@ -39,8 +39,10 @@ const defaultState: TaskStoreState = {
   workLogs: [],
 };
 
+// Normalize Firestore optional arrays so callers can treat "empty" as undefined.
 const normalizeArray = <T,>(value?: T[] | null) => (value && value.length > 0 ? value : undefined);
 
+// Map Firestore task documents into the canonical Task shape with safe defaults.
 const toTaskModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Task => {
   const data = docSnap.data();
   return {
@@ -57,6 +59,7 @@ const toTaskModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Task => {
   };
 };
 
+// Map Firestore step documents into the canonical Step shape with safe defaults.
 const toStepModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Step => {
   const data = docSnap.data();
   return {
@@ -73,6 +76,7 @@ const toStepModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Step => {
   };
 };
 
+// Map Firestore work log documents into the canonical WorkLog shape with safe defaults.
 const toWorkLogModel = (docSnap: QueryDocumentSnapshot<DocumentData>): WorkLog => {
   const data = docSnap.data();
   return {
@@ -91,6 +95,7 @@ const tasksCollection = (db: Firestore) => collection(db, "tasks");
 const stepsCollection = (db: Firestore) => collection(db, "steps");
 const workLogsCollection = (db: Firestore) => collection(db, "workLogs");
 
+// Pull a consistent snapshot of tasks, steps, and logs for the current user.
 const fetchTaskStoreSnapshot = async (db: Firestore, userId: string): Promise<TaskStoreSnapshot> => {
   const [taskSnapshot, stepSnapshot, workLogSnapshot] = await Promise.all([
     getDocs(query(tasksCollection(db), where("userId", "==", userId))),
@@ -105,10 +110,11 @@ const fetchTaskStoreSnapshot = async (db: Firestore, userId: string): Promise<Ta
     steps: stepSnapshot.docs.map(toStepModel),
     workLogs: workLogSnapshot.docs
       .map(toWorkLogModel)
-      .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
   };
 };
 
+// Cascade delete all work logs linked to a task (Firestore has no server-side cascade).
 const deleteWorkLogsByTask = async (db: Firestore, taskId: string) => {
   const snapshot = await getDocs(query(workLogsCollection(db), where("taskId", "==", taskId)));
   if (snapshot.empty) return;
@@ -117,6 +123,7 @@ const deleteWorkLogsByTask = async (db: Firestore, taskId: string) => {
   await batch.commit();
 };
 
+// Cascade delete all work logs linked to a step (Firestore has no server-side cascade).
 const deleteWorkLogsByStep = async (db: Firestore, stepId: string) => {
   const snapshot = await getDocs(query(workLogsCollection(db), where("stepId", "==", stepId)));
   if (snapshot.empty) return;
@@ -125,6 +132,7 @@ const deleteWorkLogsByStep = async (db: Firestore, stepId: string) => {
   await batch.commit();
 };
 
+// Delete a step subtree depth-first to ensure children and their logs are removed first.
 const deleteStepWithChildren = async (db: Firestore, stepId: string) => {
   const childSnapshot = await getDocs(
     query(stepsCollection(db), where("parentStepId", "==", stepId)),
@@ -134,12 +142,14 @@ const deleteStepWithChildren = async (db: Firestore, stepId: string) => {
   await deleteDoc(doc(db, "steps", stepId));
 };
 
+// Task store hook backed by fetch-on-demand Firestore queries (no realtime listeners).
 export const useTaskStore = () => {
   const { user } = useAuth();
   const [state, setState] = useState<TaskStoreState>(defaultState);
   const [isHydrated, setIsHydrated] = useState(false);
   const db = useMemo(() => getFirestore(firebaseApp), []);
 
+  // Guard every write with the current user id to enforce ownership.
   const ensureUserId = useCallback(() => {
     if (!user) {
       throw new Error("User is not authenticated.");
@@ -147,6 +157,7 @@ export const useTaskStore = () => {
     return user.uid;
   }, [user]);
 
+  // Fetch and replace the entire in-memory snapshot after every write.
   const refreshState = useCallback(async () => {
     if (!user) {
       setState(defaultState);
@@ -182,6 +193,7 @@ export const useTaskStore = () => {
     };
   }, [db, user]);
 
+  // Write helpers below always refresh the snapshot to keep derived views consistent.
   const createTask = useCallback(
     async (input: CreateTaskInput) => {
       const uid = ensureUserId();
@@ -222,6 +234,7 @@ export const useTaskStore = () => {
   const deleteTask = useCallback(
     async (id: string) => {
       ensureUserId();
+      // Keep referential integrity manually by removing logs and nested steps first.
       await deleteWorkLogsByTask(db, id);
       const stepSnapshot = await getDocs(query(stepsCollection(db), where("taskId", "==", id)));
       await Promise.all(stepSnapshot.docs.map((step) => deleteStepWithChildren(db, step.id)));

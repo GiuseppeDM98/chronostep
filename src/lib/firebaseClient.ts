@@ -10,6 +10,7 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Reuse the client app across HMR to avoid re-initialization warnings.
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const firebaseApp = app;

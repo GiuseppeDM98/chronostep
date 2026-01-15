@@ -1,12 +1,14 @@
 import Link from "next/link";
 import AuthGate from "../components/AuthGate";
 
+// CTA cards drive navigation to the three core areas of the app.
 const CTA_LINKS = [
   { href: "/tasks", label: "View Tasks", description: "Manage tasks, filters, and progress" },
   { href: "/timeline", label: "Timeline", description: "See your work logs chronologically" },
   { href: "/insights", label: "Insights", description: "Focus planning e carico del team" },
 ];
 
+// Home content sits behind AuthGate to keep the entry experience authenticated.
 const HomePage = () => (
   <AuthGate>
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-16">

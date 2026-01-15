@@ -13,6 +13,7 @@ const NAV_LINKS = [
 const TopNav = () => {
   const pathname = usePathname();
   const isActive = (href: string) => {
+    // Root needs exact match; other routes accept nested paths.
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(`${href}/`);
   };
