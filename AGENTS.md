@@ -64,6 +64,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Layouts are simple `max-w-*` centered containers.
 - CTAs use dark backgrounds with rounded corners.
 - Status/priority badges are encoded as class maps in the page.
+- Step status filters should reuse `TASK_STATUS_OPTIONS` and narrow to `StepStatus` as needed.
 - Copy is mixed Italian/English; keep tone consistent.
 
 ## Key helpers
@@ -92,6 +93,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Prefer `useMemo` for heavy derived computations.
 - Prefer `useCallback` for handlers passed to children.
 - Use inline UI state for forms (no external state libs).
+- Pre-fill Work Log tag inputs from task tags only when the field is empty.
 - Sorting is done in render layer (not in Firestore queries).
 - Use ISO strings everywhere; UI converts to local display.
 - Due dates are converted via `new Date('${yyyy-mm-dd}T00:00:00.000Z')`.

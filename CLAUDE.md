@@ -24,8 +24,9 @@ Keep information concise and actionable.
 - Auth: email/password sign-in and sign-up (`src/hooks/useAuth.tsx`).
 - Tasks list: filters by status and sorts by priority (`src/app/tasks/page.tsx`).
 - Task detail: edit task, steps, and work logs in one page (`src/app/tasks/[id]/page.tsx`).
+- Steps: status filters and readable status badges on task detail.
 - Steps: nested steps with ordering and status updates.
-- Work logs: start/stop/note entries per task or step with tags.
+- Work logs: start/stop/note entries per task or step with tags, prefilled from task tags.
 - Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
 - Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
@@ -74,6 +75,5 @@ Keep information concise and actionable.
 - Lack of tests increases regression risk for refactors.
 
 ## Suggested next additions (from docs)
-- Step status filters on task detail.
 - Preset work logs / quick log actions.
 - Start-stop timer and calendar heatmap.

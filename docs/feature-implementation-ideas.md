@@ -45,6 +45,9 @@ Introdurre tag (cliente, progetto, tipo attivita) per filtrare e aggregare megli
 
 ## 3) Filtro substep per stato e stato piu chiaro
 
+**Stato**
+Completato.
+
 **Scopo**
 Permettere di filtrare i substep per stato e rendere lo stato piu leggibile a colpo d'occhio.
 

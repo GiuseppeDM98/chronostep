@@ -22,6 +22,9 @@ const WORKLOG_TYPE_LABELS: Record<WorkLogType, string> = {
 };
 
 const TASK_STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
+const STEP_STATUS_OPTIONS: StepStatus[] = TASK_STATUS_OPTIONS.filter(
+  (status): status is StepStatus => status !== "blocked",
+);
 const TASK_PRIORITY_OPTIONS: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
 
 // Build a stable step tree per task, keeping sibling order deterministic.
@@ -64,6 +67,8 @@ const parseTagsInput = (value: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
+const formatTagsInput = (tags?: string[]) => tags?.join(", ") ?? "";
+
 const toDateInputValue = (iso?: string) => {
   if (!iso) return "";
   return new Date(iso).toISOString().slice(0, 10);
@@ -82,6 +87,38 @@ const StatusBadge = ({ status }: { status: Task["status"] }) => {
     </span>
   );
 };
+
+const STEP_STATUS_BADGE_STYLES: Record<StepStatus, string> = {
+  todo: "bg-slate-100 text-slate-700",
+  in_progress: "bg-amber-100 text-amber-800",
+  done: "bg-emerald-100 text-emerald-800",
+};
+
+const STEP_STATUS_DOT_STYLES: Record<StepStatus, string> = {
+  todo: "bg-slate-400",
+  in_progress: "bg-amber-500",
+  done: "bg-emerald-500",
+};
+
+const StepStatusBadge = ({ status }: { status: StepStatus }) => (
+  <span
+    className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STEP_STATUS_BADGE_STYLES[status]}`}
+  >
+    <span className={`h-2 w-2 rounded-full ${STEP_STATUS_DOT_STYLES[status]}`} />
+    {STEP_STATUS_LABELS[status]}
+  </span>
+);
+
+const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] =>
+  nodes
+    .map((node) => {
+      const filteredChildren = filterStepTree(node.children, status);
+      if (node.status === status || filteredChildren.length > 0) {
+        return { ...node, children: filteredChildren };
+      }
+      return null;
+    })
+    .filter((node): node is StepNode => node !== null);
 
 // Recursive step list with inline status controls and edit actions.
 const StepTree = ({
@@ -105,7 +142,7 @@ const StepTree = ({
               <p className="break-words text-sm text-slate-600">{node.description}</p>
             ) : null}
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{STEP_STATUS_LABELS[node.status]}</span>
+              <StepStatusBadge status={node.status} />
               <select
                 className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700"
                 value={node.status}
@@ -183,6 +220,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [newStepParentId, setNewStepParentId] = useState("");
   const [newStepDescription, setNewStepDescription] = useState("");
   const [newStepStatus, setNewStepStatus] = useState<StepStatus>("todo");
+  const [stepStatusFilter, setStepStatusFilter] = useState<"all" | StepStatus>("all");
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editingStepTitle, setEditingStepTitle] = useState("");
   const [editingStepDescription, setEditingStepDescription] = useState("");
@@ -192,6 +230,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [newLogMessage, setNewLogMessage] = useState("");
   const [newLogStepId, setNewLogStepId] = useState("");
   const [newLogTags, setNewLogTags] = useState("");
+  const defaultTaskTags = useMemo(() => formatTagsInput(task?.tags), [task?.tags]);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [editingLogType, setEditingLogType] = useState<WorkLogType>("note");
   const [editingLogMessage, setEditingLogMessage] = useState("");
@@ -210,6 +249,10 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const logTagLimit = 3;
 
   const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
+  const filteredStepTree = useMemo(() => {
+    if (stepStatusFilter === "all") return stepTree;
+    return filterStepTree(stepTree, stepStatusFilter);
+  }, [stepTree, stepStatusFilter]);
   const orderedSteps = useMemo(
     () => [...taskSteps].sort((first, second) => first.order - second.order),
     [taskSteps],
@@ -325,6 +368,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     }
   }, [task]);
 
+  useEffect(() => {
+    if (!newLogTags && defaultTaskTags) {
+      setNewLogTags(defaultTaskTags);
+    }
+  }, [defaultTaskTags, newLogTags]);
+
   if (!isHydrated) {
     return (
       <AuthGate>
@@ -409,7 +458,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setNewLogMessage("");
     setNewLogStepId("");
     setNewLogType("note");
-    setNewLogTags("");
+    setNewLogTags(defaultTaskTags);
   };
 
   const startEditingLog = (logId: string) => {
@@ -637,13 +686,36 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
 
       <section className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Steps</h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">Steps</h2>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <span>Filtro stato</span>
+              <select
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
+                value={stepStatusFilter}
+                onChange={(event) =>
+                  setStepStatusFilter(event.target.value as "all" | StepStatus)
+                }
+              >
+                <option value="all">Tutti</option>
+                {STEP_STATUS_OPTIONS.map((statusOption) => (
+                  <option key={statusOption} value={statusOption}>
+                    {STEP_STATUS_LABELS[statusOption]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           {taskSteps.length === 0 ? (
             <p className="mt-4 text-sm text-slate-500">Nessun passo ancora, aggiungine uno.</p>
+          ) : filteredStepTree.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">
+              Nessuno step con lo stato selezionato.
+            </p>
           ) : (
             <div className="mt-4">
               <StepTree
-                nodes={stepTree}
+                nodes={filteredStepTree}
                 onStatusChange={(id, newStatus) => updateStep(id, { status: newStatus })}
                 onDelete={(id) => {
                   if (confirm("Eliminare questo step e i suoi substep?")) {
