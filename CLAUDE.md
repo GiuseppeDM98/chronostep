@@ -23,6 +23,7 @@ Keep information concise and actionable.
 ## Main features and modules
 - Auth: email/password sign-in and sign-up (`src/hooks/useAuth.tsx`).
 - Tasks list: search by title/description/tags, filter by status, and sort by priority (`src/app/tasks/page.tsx`).
+- Tasks list: default view excludes `done` tasks via the "Active" filter (`src/app/tasks/page.tsx`).
 - Task detail: edit task, steps, and work logs in modals with Esc warnings on unsaved text (`src/app/tasks/[id]/page.tsx`).
 - Steps: status filters that show only matching steps/substeps and readable status badges.
 - Steps: nested steps with ordering, status updates, parent reassignment, and auto-complete when all children are done.

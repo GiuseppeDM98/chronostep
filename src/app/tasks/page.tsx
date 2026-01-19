@@ -6,9 +6,10 @@ import AuthGate from "../../components/AuthGate";
 import type { Task, TaskStatus } from "../../lib/types";
 import { useTaskStore } from "../../hooks/useTaskStore";
 
-type StatusFilter = "all" | TaskStatus;
+type StatusFilter = "all" | "active" | TaskStatus;
 
 const STATUS_FILTERS: Array<{ label: string; value: StatusFilter }> = [
+  { label: "Active", value: "active" },
   { label: "All", value: "all" },
   { label: "Todo", value: "todo" },
   { label: "In Progress", value: "in_progress" },
@@ -114,7 +115,7 @@ const TaskCard = ({
 );
 
 const TasksPage = () => {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [searchQuery, setSearchQuery] = useState("");
   const { tasks, steps, isHydrated, createTask, deleteTask } = useTaskStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -149,8 +150,15 @@ const TasksPage = () => {
   }, [steps, tasks]);
 
   const filteredTasks = useMemo(() => {
-    const byStatus =
-      statusFilter === "all" ? tasks : tasks.filter((task) => task.status === statusFilter);
+    const byStatus = (() => {
+      if (statusFilter === "active") {
+        return tasks.filter((task) => task.status !== "done");
+      }
+      if (statusFilter === "all") {
+        return tasks;
+      }
+      return tasks.filter((task) => task.status === statusFilter);
+    })();
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const bySearch = normalizedQuery
       ? byStatus.filter((task) => {
