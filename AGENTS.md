@@ -58,6 +58,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - No real-time listeners; everything is fetch-on-demand.
 - `isHydrated` gates UI states during initial load.
 - Deleting a task cascades to steps and work logs via batched ops.
+- Step updates auto-complete ancestor steps and tasks when all children are `done` (no auto-reset).
 
 ## UI patterns
 - Tailwind only; no component library.
@@ -65,6 +66,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - CTAs use dark backgrounds with rounded corners.
 - Status/priority badges are encoded as class maps in the page.
 - Step status filters should reuse `TASK_STATUS_OPTIONS` and narrow to `StepStatus` as needed.
+- Step status filtering shows only matching steps/substeps; non-matching parents are not shown.
 - Task detail uses modals for add/edit flows (task, steps, work logs) with Esc-to-close warnings on unsaved text.
 - Copy is mixed Italian/English; keep tone consistent.
 

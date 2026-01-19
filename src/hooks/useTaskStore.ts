@@ -6,6 +6,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   query,
@@ -266,10 +267,91 @@ export const useTaskStore = () => {
     [db, ensureUserId, refreshState],
   );
 
+  /**
+   * Read step metadata needed for cascading status updates.
+   */
+  const readStepMetadata = useCallback(
+    async (stepId: string) => {
+      const snapshot = await getDoc(doc(db, "steps", stepId));
+      if (!snapshot.exists()) return null;
+      const data = snapshot.data();
+      return {
+        taskId: data.taskId as string,
+        parentStepId: (data.parentStepId as string | null) ?? undefined,
+        status: data.status as Step["status"],
+      };
+    },
+    [db],
+  );
+
+  /**
+   * Promote parent steps to done when all of their substeps are done.
+   * This only auto-completes upward and never auto-resets statuses.
+   */
+  const completeAncestorStepsIfReady = useCallback(
+    async (startingStepId?: string) => {
+      let currentStepId = startingStepId;
+
+      while (currentStepId) {
+        const stepSnapshot = await getDoc(doc(db, "steps", currentStepId));
+        if (!stepSnapshot.exists()) return;
+        const stepData = stepSnapshot.data();
+
+        const childrenSnapshot = await getDocs(
+          query(stepsCollection(db), where("parentStepId", "==", currentStepId)),
+        );
+        if (childrenSnapshot.empty) return;
+
+        const allChildrenDone = childrenSnapshot.docs.every(
+          (child) => child.data().status === "done",
+        );
+        if (!allChildrenDone) return;
+
+        if (stepData.status !== "done") {
+          await updateDoc(doc(db, "steps", currentStepId), {
+            status: "done",
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        currentStepId = (stepData.parentStepId as string | null) ?? undefined;
+      }
+    },
+    [db],
+  );
+
+  /**
+   * Mark a task as done when all of its steps are done (if it has any).
+   */
+  const completeTaskIfReady = useCallback(
+    async (taskId: string) => {
+      const stepsSnapshot = await getDocs(
+        query(stepsCollection(db), where("taskId", "==", taskId)),
+      );
+      if (stepsSnapshot.empty) return;
+
+      const allStepsDone = stepsSnapshot.docs.every((step) => step.data().status === "done");
+      if (!allStepsDone) return;
+
+      const taskSnapshot = await getDoc(doc(db, "tasks", taskId));
+      if (!taskSnapshot.exists()) return;
+      const taskData = taskSnapshot.data();
+      if (taskData.status === "done") return;
+
+      await updateDoc(doc(db, "tasks", taskId), {
+        status: "done",
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [db],
+  );
+
   const updateStep = useCallback(
     async (id: string, input: UpdateStepInput) => {
       ensureUserId();
       const now = new Date().toISOString();
+      const previousStep = state.steps.find((step) => step.id === id);
+      const previousParentId = previousStep?.parentStepId;
       const data: Record<string, unknown> = { updatedAt: now };
       if (input.title !== undefined) data.title = input.title;
       if (input.description !== undefined) data.description = input.description ?? null;
@@ -277,9 +359,25 @@ export const useTaskStore = () => {
       if (input.order !== undefined) data.order = input.order;
       if (input.parentStepId !== undefined) data.parentStepId = input.parentStepId ?? null;
       await updateDoc(doc(db, "steps", id), data);
+      const currentStep = await readStepMetadata(id);
+      if (currentStep) {
+        await completeAncestorStepsIfReady(currentStep.parentStepId);
+        if (previousParentId && previousParentId !== currentStep.parentStepId) {
+          await completeAncestorStepsIfReady(previousParentId);
+        }
+        await completeTaskIfReady(currentStep.taskId);
+      }
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [
+      db,
+      ensureUserId,
+      refreshState,
+      state.steps,
+      readStepMetadata,
+      completeAncestorStepsIfReady,
+      completeTaskIfReady,
+    ],
   );
 
   const deleteStep = useCallback(

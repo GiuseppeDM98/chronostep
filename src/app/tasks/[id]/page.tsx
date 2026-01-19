@@ -109,16 +109,21 @@ const StepStatusBadge = ({ status }: { status: StepStatus }) => (
   </span>
 );
 
-const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] =>
-  nodes
-    .map((node) => {
-      const filteredChildren = filterStepTree(node.children, status);
-      if (node.status === status || filteredChildren.length > 0) {
-        return { ...node, children: filteredChildren };
-      }
-      return null;
-    })
-    .filter((node): node is StepNode => node !== null);
+const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] => {
+  const matches: StepNode[] = [];
+
+  nodes.forEach((node) => {
+    const filteredChildren = filterStepTree(node.children, status);
+    if (node.status === status) {
+      matches.push({ ...node, children: filteredChildren });
+    } else {
+      // Lift matching descendants when the parent does not match the filter.
+      matches.push(...filteredChildren);
+    }
+  });
+
+  return matches;
+};
 
 // Recursive step list with inline status controls and edit actions.
 const StepTree = ({

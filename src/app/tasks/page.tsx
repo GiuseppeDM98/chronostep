@@ -115,6 +115,7 @@ const TaskCard = ({
 
 const TasksPage = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const { tasks, steps, isHydrated, createTask, deleteTask } = useTaskStore();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -150,8 +151,21 @@ const TasksPage = () => {
   const filteredTasks = useMemo(() => {
     const byStatus =
       statusFilter === "all" ? tasks : tasks.filter((task) => task.status === statusFilter);
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const bySearch = normalizedQuery
+      ? byStatus.filter((task) => {
+          const haystack = [
+            task.title,
+            task.description ?? "",
+            task.tags?.join(" ") ?? "",
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(normalizedQuery);
+        })
+      : byStatus;
     // Sort by priority first, then title to keep the list predictable.
-    return [...byStatus].sort((taskA, taskB) => {
+    return [...bySearch].sort((taskA, taskB) => {
       const priorityA =
         taskA.priority !== undefined ? PRIORITY_ORDER[taskA.priority] : Number.POSITIVE_INFINITY;
       const priorityB =
@@ -161,7 +175,7 @@ const TasksPage = () => {
       }
       return taskA.title.localeCompare(taskB.title);
     });
-  }, [statusFilter, tasks]);
+  }, [statusFilter, tasks, searchQuery]);
 
   const resetForm = () => {
     setTitle("");
@@ -282,21 +296,29 @@ const TasksPage = () => {
         </button>
       </header>
 
-      <section className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((filter) => (
-          <button
-            key={filter.value}
-            type="button"
-            onClick={() => setStatusFilter(filter.value)}
-            className={`rounded-full border px-3 py-1 text-sm font-medium transition ${
-              statusFilter === filter.value
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <input
+          className="w-full rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 sm:max-w-xs"
+          placeholder="Cerca task..."
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+        <div className="flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              onClick={() => setStatusFilter(filter.value)}
+              className={`rounded-full border px-3 py-1 text-sm font-medium transition ${
+                statusFilter === filter.value
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </section>
 
       {!isHydrated ? (
@@ -324,7 +346,9 @@ const TasksPage = () => {
 
           {filteredTasks.length === 0 ? (
             <div className="col-span-full rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
-              No tasks match this filter.
+              {searchQuery.trim()
+                ? "Nessun task corrisponde alla ricerca."
+                : "Nessun task corrisponde al filtro selezionato."}
             </div>
           ) : null}
         </section>
