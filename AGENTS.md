@@ -14,6 +14,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `src/app/page.tsx` is the home page.
 - `src/app/tasks/page.tsx` lists tasks.
 - `src/app/tasks/[id]/page.tsx` is task detail, edit, steps, work logs.
+- `src/app/today/page.tsx` is the "Cosa faccio oggi?" focus view.
 - `src/app/timeline/page.tsx` is chronological work log view.
 - `src/app/report/page.tsx` is monthly report by task.
 - `src/app/insights/page.tsx` is analytics + calendar.
@@ -41,7 +42,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Collections: `tasks`, `steps`, `workLogs`.
 - Every document must include `userId` for security rules.
 - `tasks` store status, priority, tags, dueDate, timestamps.
-- `steps` store order and optional parentStepId (nested steps).
+- `steps` store order, optional parentStepId (nested steps), and dueDate.
 - `workLogs` store type (`start` | `stop` | `note`), timestamp, and tags.
 
 ## Domain types
@@ -102,6 +103,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Use ISO strings everywhere; UI converts to local display.
 - Due dates are converted via `new Date('${yyyy-mm-dd}T00:00:00.000Z')`.
 - Localized date formatting uses `toLocaleDateString` and `toLocaleString`.
+- JSX copy must escape `<`/`>` (wrap arrow text in `{""}` or use HTML entities).
 
 ## Known gaps
 - No tests or test framework in repo.
@@ -154,6 +156,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Task detail: `src/app/tasks/[id]/page.tsx`
 - Timeline: `src/app/timeline/page.tsx`
 - Insights: `src/app/insights/page.tsx`
+- Today: `src/app/today/page.tsx`
 - Global styles: `src/app/globals.css`
 
 ## Security reminders

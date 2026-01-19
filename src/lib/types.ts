@@ -52,6 +52,7 @@ export interface Step {
   order: number;
   createdAt: IsoDateTimeString;
   updatedAt: IsoDateTimeString;
+  dueDate?: IsoDateTimeString;
 }
 
 /**

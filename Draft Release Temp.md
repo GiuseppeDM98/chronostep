@@ -5,6 +5,8 @@
 - Added modal editing for tasks, steps, and work logs in the task detail view.
 - Added the ability to reassign a substep to a different parent step.
 - Added a task search field to find tasks by title, description, or tags.
+- Added a "What should I do today?" view to surface tasks and steps due today.
+- Added step and substep due dates so deadlines can be set at the action level.
 
 ## 🐛 Bug Fixes
 - Fixed step status filtering to show only steps and substeps that match the selected status.

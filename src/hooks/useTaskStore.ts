@@ -74,6 +74,7 @@ const toStepModel = (docSnap: QueryDocumentSnapshot<DocumentData>): Step => {
     order: data.order ?? 0,
     createdAt: data.createdAt ?? new Date().toISOString(),
     updatedAt: data.updatedAt ?? new Date().toISOString(),
+    dueDate: data.dueDate ?? undefined,
   };
 };
 
@@ -259,6 +260,7 @@ export const useTaskStore = () => {
         description: input.description ?? null,
         status: input.status,
         order: input.order,
+        dueDate: input.dueDate ?? null,
         createdAt: now,
         updatedAt: now,
       });
@@ -358,6 +360,7 @@ export const useTaskStore = () => {
       if (input.status !== undefined) data.status = input.status;
       if (input.order !== undefined) data.order = input.order;
       if (input.parentStepId !== undefined) data.parentStepId = input.parentStepId ?? null;
+      if (input.dueDate !== undefined) data.dueDate = input.dueDate ?? null;
       await updateDoc(doc(db, "steps", id), data);
       const currentStep = await readStepMetadata(id);
       if (currentStep) {

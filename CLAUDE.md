@@ -26,6 +26,7 @@ Keep information concise and actionable.
 - Task detail: edit task, steps, and work logs in modals with Esc warnings on unsaved text (`src/app/tasks/[id]/page.tsx`).
 - Steps: status filters that show only matching steps/substeps and readable status badges.
 - Steps: nested steps with ordering, status updates, parent reassignment, and auto-complete when all children are done.
+- Today view: highlights tasks and steps due today (`src/app/today/page.tsx`).
 - Work logs: start/stop/note entries per task or step with tags, prefilled from task tags.
 - Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
@@ -34,7 +35,7 @@ Keep information concise and actionable.
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
-- Step: order, optional parentStepId, status, userId.
+- Step: order, optional parentStepId, status, dueDate, userId.
 - WorkLog: type, message, timestamp, tags, optional stepId, userId.
 - All timestamps are ISO strings; UI converts them for display.
 

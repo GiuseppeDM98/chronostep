@@ -3,6 +3,7 @@ import AuthGate from "../components/AuthGate";
 
 // CTA cards drive navigation to the three core areas of the app.
 const CTA_LINKS = [
+  { href: "/today", label: "Oggi", description: "Cosa devo completare oggi" },
   { href: "/tasks", label: "View Tasks", description: "Manage tasks, filters, and progress" },
   { href: "/timeline", label: "Timeline", description: "See your work logs chronologically" },
   { href: "/report", label: "Report", description: "Monthly report by task" },

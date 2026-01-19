@@ -161,6 +161,7 @@ const StepTree = ({
                   </option>
                 ))}
               </select>
+              {node.dueDate ? <span>Due {formatDate(node.dueDate)}</span> : null}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs font-medium sm:justify-end">
@@ -227,11 +228,13 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [newStepParentId, setNewStepParentId] = useState("");
   const [newStepDescription, setNewStepDescription] = useState("");
   const [newStepStatus, setNewStepStatus] = useState<StepStatus>("todo");
+  const [newStepDueDate, setNewStepDueDate] = useState("");
   const [stepStatusFilter, setStepStatusFilter] = useState<"all" | StepStatus>("all");
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editingStepTitle, setEditingStepTitle] = useState("");
   const [editingStepDescription, setEditingStepDescription] = useState("");
   const [editingStepStatus, setEditingStepStatus] = useState<StepStatus>("todo");
+  const [editingStepDueDate, setEditingStepDueDate] = useState("");
   const [editingStepParentId, setEditingStepParentId] = useState("");
   const [editingStepOriginalParentId, setEditingStepOriginalParentId] = useState("");
 
@@ -316,6 +319,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingStepTitle("");
     setEditingStepDescription("");
     setEditingStepStatus("todo");
+    setEditingStepDueDate("");
     setEditingStepParentId("");
     setEditingStepOriginalParentId("");
     setStepEscWarning(null);
@@ -326,6 +330,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setNewStepParentId("");
     setNewStepDescription("");
     setNewStepStatus("todo");
+    setNewStepDueDate("");
     setStepEscWarning(null);
   };
 
@@ -607,6 +612,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     if (!newStepTitle.trim()) return;
 
     const parentId = newStepParentId || undefined;
+    const dueDateIso = newStepDueDate
+      ? new Date(`${newStepDueDate}T00:00:00.000Z`).toISOString()
+      : undefined;
     // Step order is scoped to siblings, so derive the next slot from the same parent.
     const siblingOrders = taskSteps
       .filter((step) => step.parentStepId === parentId)
@@ -620,6 +628,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       description: newStepDescription.trim() || undefined,
       status: newStepStatus,
       order: nextOrder,
+      dueDate: dueDateIso,
     });
 
     resetNewStepForm();
@@ -647,6 +656,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingStepTitle(step.title);
     setEditingStepDescription(step.description ?? "");
     setEditingStepStatus(step.status);
+    setEditingStepDueDate(toDateInputValue(step.dueDate));
     setEditingStepParentId(step.parentStepId ?? "");
     setEditingStepOriginalParentId(step.parentStepId ?? "");
     stepTextSnapshot.current = {
@@ -669,6 +679,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       status: editingStepStatus,
       parentStepId: nextParentId,
     };
+    const dueDateIso = editingStepDueDate
+      ? new Date(`${editingStepDueDate}T00:00:00.000Z`).toISOString()
+      : undefined;
+    if (dueDateIso) {
+      updatePayload.dueDate = dueDateIso;
+    }
     if (parentChanged) {
       const siblingOrders = taskSteps
         .filter((step) => step.parentStepId === nextParentId && step.id !== editingStepId)
@@ -1069,6 +1085,19 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                           : setNewStepDescription(event.target.value)
                       }
                       placeholder="Descrizione step"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-slate-700">Due date</label>
+                    <input
+                      type="date"
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={isEditingStep ? editingStepDueDate : newStepDueDate}
+                      onChange={(event) =>
+                        isEditingStep
+                          ? setEditingStepDueDate(event.target.value)
+                          : setNewStepDueDate(event.target.value)
+                      }
                     />
                   </div>
                   <div>
