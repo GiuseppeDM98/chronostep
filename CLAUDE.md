@@ -27,6 +27,7 @@ This document provides detailed technical information about ChronoStep's archite
 
 ## Main features and modules
 - Auth: email/password sign-in and sign-up (`src/hooks/useAuth.tsx`).
+- Auth: optional sign-up lockout with a whitelist for new registrations.
 - Tasks list: search by title/description/tags, filter by status, and sort by priority (`src/app/tasks/page.tsx`).
 - Tasks list: default view excludes `done` tasks via the "Active" filter (`src/app/tasks/page.tsx`).
 - Task detail: edit task, steps, and work logs in modals with Esc warnings on unsaved text (`src/app/tasks/[id]/page.tsx`).
@@ -38,6 +39,7 @@ This document provides detailed technical information about ChronoStep's archite
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
 - Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
 - Shared UI: top navigation and auth gate (`src/components`).
+- Shared UI: demo account credentials are displayed on the login screen for trials.
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
@@ -60,6 +62,7 @@ This document provides detailed technical information about ChronoStep's archite
   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
   - `NEXT_PUBLIC_FIREBASE_APP_ID`
+- Optional: `NEXT_PUBLIC_DISABLE_SIGNUPS` and `NEXT_PUBLIC_SIGNUP_WHITELIST` control new registrations.
 - Optional: `FIREBASE_SERVICE_ACCOUNT` JSON string is present in `.env`.
 - Firebase Auth (email/password) must be enabled.
 - Firestore rules should be deployed from `firestore.rules`.

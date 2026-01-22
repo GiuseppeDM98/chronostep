@@ -37,6 +37,8 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `AuthGate` renders sign-in or sign-up UI when unauthenticated.
 - Auth uses Firebase client SDK (`firebase/auth`) only.
 - `signOutUser` is called from the top bar in `AuthGate`.
+- New sign-ups can be disabled via `NEXT_PUBLIC_DISABLE_SIGNUPS`, with allowed emails in `NEXT_PUBLIC_SIGNUP_WHITELIST`.
+- The login screen can surface shared demo credentials for open-source trials.
 
 ## Data model (Firestore)
 - Collections: `tasks`, `steps`, `workLogs`.
@@ -124,6 +126,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Firestore must be enabled and rules deployed.
 - `FIREBASE_SERVICE_ACCOUNT` private key must escape newlines (`\n`).
 - The app expects `userId` on every document; writes must include it.
+- If sign-ups are disabled, only whitelisted emails can register.
 - Timezone: due dates are stored as UTC midnight, display is local.
 - Deleting steps recurses through children; long trees can be slow.
 

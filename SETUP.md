@@ -142,6 +142,12 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=chronostep-dev-12345
 NEXT_PUBLIC_FIREBASE_APP_ID=1:788973220328:web:a3a81d77b1dbc67578345d
 ```
 
+**Optional**: Lock down new registrations by default:
+```env
+NEXT_PUBLIC_DISABLE_SIGNUPS=true
+NEXT_PUBLIC_SIGNUP_WHITELIST=admin@example.com,team@example.com
+```
+
 **Security Warning**: Never commit the `.env` file to version control. It's already in `.gitignore`, but double-check before pushing to GitHub.
 
 ---

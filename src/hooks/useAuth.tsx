@@ -21,6 +21,24 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const SIGNUPS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_SIGNUPS === "true";
+const SIGNUP_WHITELIST = new Set(
+  (process.env.NEXT_PUBLIC_SIGNUP_WHITELIST ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+const isSignupAllowed = (email: string) => {
+  if (!SIGNUPS_DISABLED) {
+    return true;
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return false;
+  }
+  return SIGNUP_WHITELIST.has(normalizedEmail);
+};
 
 // AuthProvider exposes Firebase auth state and actions through a single context.
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -52,6 +70,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signUp = useCallback(async (email: string, password: string) => {
     setError(null);
     try {
+      if (!isSignupAllowed(email)) {
+        const message = "Sign-ups are currently disabled";
+        setError(message);
+        throw new Error(message);
+      }
       await createUserWithEmailAndPassword(firebaseAuth, email, password);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Unable to sign up");

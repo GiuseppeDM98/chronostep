@@ -63,9 +63,15 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
           <h1 className="mt-2 text-2xl font-bold text-slate-900">
             {mode === "signin" ? "Access your tasks" : "Create an account"}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Firebase Authentication protects your personal workspace.
-          </p>
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <p className="font-semibold text-slate-700">Demo account</p>
+            <p className="mt-1">
+              Email: <span className="font-medium">admin@example.com</span>
+            </p>
+            <p>
+              Password: <span className="font-medium">adminEx</span>
+            </p>
+          </div>
 
           <div className="mt-6 space-y-4">
             <div>
