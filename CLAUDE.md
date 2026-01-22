@@ -1,5 +1,10 @@
-# CLAUDE.md
-Keep information concise and actionable.
+# ChronoStep Technical Guide
+
+> **Audience**: Developers and AI agents working on ChronoStep
+> **For setup instructions**: See [SETUP.md](./SETUP.md)
+> **For general overview**: See [README.md](./README.md)
+
+This document provides detailed technical information about ChronoStep's architecture, implementation decisions, and known issues. Keep information concise and actionable.
 
 ## Tech stack (versions from package.json)
 - Next.js: 14.1.0

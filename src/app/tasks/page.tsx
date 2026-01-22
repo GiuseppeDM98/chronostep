@@ -1,3 +1,14 @@
+/**
+ * TasksPage - Task list with search, filter, and sort
+ *
+ * Features:
+ * - Search by title, description, and tags
+ * - Status filter (default: "Active" = exclude done tasks)
+ * - Priority sorting
+ * - Step completion progress per task
+ *
+ * Uses memos to optimize filtering/sorting performance.
+ */
 "use client";
 
 import Link from "next/link";
@@ -44,6 +55,17 @@ const formatPriority = (priority?: Task["priority"]) => {
   return `${priority.charAt(0).toUpperCase()}${priority.slice(1)}`;
 };
 
+/**
+ * TaskCard - Single task display in list view
+ *
+ * Shows task title, description, status badge, step progress,
+ * priority, and tags. Wraps in Link for navigation.
+ *
+ * @param task - Task to display
+ * @param totalSteps - Count of all steps for this task
+ * @param completedSteps - Count of done steps
+ * @param onDelete - Handler for delete action
+ */
 const TaskCard = ({
   task,
   totalSteps,
@@ -114,6 +136,12 @@ const TaskCard = ({
   </article>
 );
 
+/**
+ * TasksPage - Main task list page
+ *
+ * Displays all tasks with search, status filter (default: Active),
+ * and priority sorting. Provides new task creation and deletion.
+ */
 const TasksPage = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [searchQuery, setSearchQuery] = useState("");
@@ -258,6 +286,9 @@ const TasksPage = () => {
           .map((tag) => tag.trim())
           .filter(Boolean) ?? [];
       // Store due dates at UTC midnight to keep calendar math consistent across timezones.
+      // If we stored local time, a due date of "Jan 15" in Tokyo (UTC+9) would
+      // serialize to "Jan 14 15:00 UTC" and display as "Jan 14" in Los Angeles (UTC-8).
+      // Using UTC midnight ("Jan 15 00:00 UTC") ensures "Jan 15" displays everywhere.
       const dueDateIso = dueDate ? new Date(`${dueDate}T00:00:00.000Z`).toISOString() : undefined;
 
       await createTask({

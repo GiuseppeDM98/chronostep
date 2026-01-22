@@ -1,3 +1,11 @@
+/**
+ * RootLayout - Next.js root layout component
+ *
+ * Wraps all pages with:
+ * - Global CSS imports
+ * - Providers (Firebase Auth)
+ * - HTML structure and metadata
+ */
 import "./globals.css";
 import type { Metadata } from "next";
 import { ReactNode } from "react";

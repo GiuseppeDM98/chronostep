@@ -1,3 +1,13 @@
+/**
+ * ReportPage - Monthly time report by task
+ *
+ * Aggregates work logs into monthly summaries showing:
+ * - Total minutes per task
+ * - Note highlights
+ * - Tag breakdown
+ *
+ * Filters by year, month, and tag.
+ */
 "use client";
 
 import Link from "next/link";
@@ -26,7 +36,8 @@ const MONTH_OPTIONS = [
   { value: "12", label: "Dicembre" },
 ];
 
-// Format minutes into a compact hours/minutes label for report totals.
+// Format minutes into compact hours/minutes label for report totals.
+// Omits zero values (e.g., "2h 30m", "45m", "3h" but not "0h 0m").
 const formatMinutes = (totalMinutes: number) => {
   const rounded = Math.max(0, Math.round(totalMinutes));
   const hours = Math.floor(rounded / 60);
@@ -36,6 +47,12 @@ const formatMinutes = (totalMinutes: number) => {
   return `${minutes}m`;
 };
 
+/**
+ * ReportPage - Monthly work log report
+ *
+ * Displays aggregated time tracking data grouped by task,
+ * with filter controls for year, month, and tag.
+ */
 const ReportPage = () => {
   const { workLogs, tasks, isHydrated } = useTaskStore();
   const [selectedYear, setSelectedYear] = useState<string>("all");
@@ -61,11 +78,14 @@ const ReportPage = () => {
     [logsByTag],
   );
 
+  // Pre-filter by tag before applying year/month filters
+  // (more efficient than filtering by all three at once)
   const tagFilteredLogs = useMemo(
     () => (selectedTag === "all" ? workLogs : logsByTag.get(selectedTag) ?? []),
     [logsByTag, selectedTag, workLogs],
   );
 
+  // Apply year and month filters to tag-filtered logs
   const filteredLogs = useMemo(
     () =>
       tagFilteredLogs.filter((log) => {

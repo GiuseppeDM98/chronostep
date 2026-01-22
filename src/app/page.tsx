@@ -1,3 +1,9 @@
+/**
+ * HomePage - Landing page with navigation cards
+ *
+ * Displays app overview and CTA cards linking to main features.
+ * Sits behind AuthGate to ensure authenticated access.
+ */
 import Link from "next/link";
 import AuthGate from "../components/AuthGate";
 

@@ -1,3 +1,10 @@
+/**
+ * TodayPage - Today's due tasks and steps
+ *
+ * Filters tasks and steps by due date matching today's date.
+ * Uses UTC date keys for timezone-safe comparison.
+ * Shows only non-done items.
+ */
 "use client";
 
 import Link from "next/link";
@@ -27,14 +34,26 @@ const formatDate = (iso?: string) => {
 const formatLongDate = (date: Date) =>
   date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
+/**
+ * TodayPage - Dashboard for today's work
+ *
+ * Shows count and list of tasks/steps due today (excluding done items).
+ * Uses UTC date key comparison to avoid timezone issues.
+ */
 const TodayPage = () => {
   const { tasks, steps, isHydrated } = useTaskStore();
+  // Get today's date key (YYYY-MM-DD) using .slice(0, 10) on ISO string.
+  // This extracts just the date portion for comparison with task/step dueDates.
+  // Using UTC-based keys ensures consistent date matching across timezones.
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const todayLabel = useMemo(() => formatLongDate(new Date()), []);
 
   const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
   const stepsById = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps]);
 
+  // Filter tasks due today by comparing UTC date keys.
+  // task.dueDate?.slice(0, 10) extracts "YYYY-MM-DD" for direct comparison.
+  // Excludes done tasks since focus is on active work.
   const tasksDueToday = useMemo(() => {
     return tasks
       .filter((task) => task.status !== "done" && task.dueDate?.slice(0, 10) === todayKey)

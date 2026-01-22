@@ -1,3 +1,10 @@
+/**
+ * TimelinePage - Chronological work log view
+ *
+ * Displays all work logs grouped by date, sorted newest first.
+ * Filters by year, month, and tag.
+ * Shows duration between start/stop pairs and associated task/step context.
+ */
 "use client";
 
 import Link from "next/link";
@@ -20,7 +27,8 @@ type GroupedLogs = Array<{
 
 const TAG_PREVIEW_LIMIT = 3;
 
-// Format a log date with locale-aware day/month labels for section headers.
+// Format log date with locale-aware day/month labels for section headers.
+// Uses long format for readability: "Monday, January 15, 2024"
 const formatDate = (value: string) => {
   const date = new Date(value);
   return date.toLocaleDateString(undefined, {
@@ -32,6 +40,7 @@ const formatDate = (value: string) => {
 };
 
 // Keep time display compact so log rows stay readable on mobile.
+// Uses 24h or 12h format based on user locale.
 const formatTime = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -54,6 +63,12 @@ const MONTH_OPTIONS = [
   { value: "12", label: "Dicembre" },
 ];
 
+/**
+ * TimelinePage - Work log timeline view
+ *
+ * Groups logs by date, showing task/step context and calculated durations.
+ * Provides filters for year, month, and tag.
+ */
 const TimelinePage = () => {
   const { workLogs, tasks, steps, isHydrated } = useTaskStore();
   const [selectedYear, setSelectedYear] = useState<string>("all");
@@ -108,7 +123,8 @@ const TimelinePage = () => {
 
     const groups = new Map<string, typeof logs>();
     logs.forEach((log) => {
-      // Bucket by ISO day to keep timezone-safe grouping across locales.
+      // Group logs by date key (YYYY-MM-DD) for timeline sections.
+      // .slice(0, 10) extracts date portion to group logs from same day.
       const dateKey = new Date(log.timestamp).toISOString().slice(0, 10);
       if (!groups.has(dateKey)) {
         groups.set(dateKey, []);

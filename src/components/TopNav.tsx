@@ -12,6 +12,12 @@ const NAV_LINKS = [
   { href: "/insights", label: "Insights" },
 ];
 
+/**
+ * Application navigation bar with active route highlighting.
+ *
+ * Displays horizontal navigation links and applies visual styling to the
+ * currently active route using pathname matching.
+ */
 const TopNav = () => {
   const pathname = usePathname();
   const isActive = (href: string) => {

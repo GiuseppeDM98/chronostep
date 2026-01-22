@@ -1,3 +1,14 @@
+/**
+ * InsightsPage - Dashboard with upcoming tasks, activity, and calendar
+ *
+ * Features:
+ * - Upcoming tasks within configurable window (default 14 days)
+ * - Recent activity from last N days (default 3 days)
+ * - Interactive monthly calendar with task due dates
+ * - Priority and tag summaries
+ *
+ * Calendar uses UTC date keys to avoid timezone-based date shifts.
+ */
 "use client";
 
 import Link from "next/link";
@@ -39,7 +50,24 @@ const daysBetween = (target: Date, from: Date) =>
 const monthLabel = (year: number, month: number) =>
   new Date(year, month).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-// Build a calendar grid aligned to Monday and bucket tasks by due date (UTC day keys).
+/**
+ * Build calendar grid aligned to Monday (Italian week layout).
+ *
+ * Bucketing logic:
+ * - Tasks are grouped by UTC date keys (YYYY-MM-DD via .slice(0, 10))
+ * - JS Date.getDay() returns Sunday=0, so we shift by 6 to make Monday=0
+ * - startOffset pads empty cells before the 1st of the month
+ * - totalCells rounds up to complete the last week
+ *
+ * Why UTC keys:
+ * A task due "2024-01-15" should display on Jan 15 in the calendar
+ * regardless of user timezone. Using UTC midnight prevents shifts.
+ *
+ * @param year - Calendar year
+ * @param month - Calendar month (0-indexed, JS Date convention)
+ * @param tasks - Tasks to bucket by due date
+ * @returns Array of calendar day cells with task assignments
+ */
 const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
   const startOfMonth = new Date(year, month, 1);
   // Shift JS Sunday=0 to Monday=0 so the grid aligns with Italian week layout.
@@ -52,6 +80,8 @@ const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
     if (!task.dueDate) return;
     const due = new Date(task.dueDate);
     if (due.getFullYear() !== year || due.getMonth() !== month) return;
+    // Extract UTC date key (YYYY-MM-DD) via .slice(0, 10) on ISO timestamp.
+    // Ensures date-based grouping/comparison works across timezones.
     const key = due.toISOString().slice(0, 10);
     const bucket = tasksByDate.get(key) ?? [];
     bucket.push(task);
@@ -64,7 +94,8 @@ const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
     if (dayOfMonth < 1 || dayOfMonth > daysInMonth) {
       days.push({ key: `blank-${cell}`, label: "", tasks: [], isCurrentMonth: false });
     } else {
-      // Use UTC midnight ISO keys to avoid timezone shifts when grouping due dates.
+      // Extract UTC date key (YYYY-MM-DD) via .slice(0, 10) on ISO timestamp.
+      // Ensures date-based grouping/comparison works across timezones.
       const iso = new Date(Date.UTC(year, month, dayOfMonth)).toISOString().slice(0, 10);
       days.push({
         key: iso,
@@ -78,6 +109,12 @@ const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
   return days;
 };
 
+/**
+ * InsightsPageContent - Main insights dashboard content
+ *
+ * Wrapped in Suspense by parent to handle search params.
+ * Renders upcoming tasks, recent activity, calendar, and summaries.
+ */
 const InsightsPageContent = () => {
   const { tasks, steps, workLogs, isHydrated } = useTaskStore();
   const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);

@@ -9,8 +9,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Env files
+# Env files (exclude all except .env.example)
 .env*
+!.env.example
 
 # Prisma
 prisma/migrations/

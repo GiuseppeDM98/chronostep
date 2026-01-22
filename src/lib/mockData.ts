@@ -1,10 +1,21 @@
+/**
+ * Mock data for local development and testing.
+ *
+ * This file provides realistic seed data that demonstrates:
+ * - Task/Step/WorkLog relationships
+ * - Nested steps (parentStepId references)
+ * - Various statuses, priorities, and tags
+ * - Start/stop work log patterns
+ *
+ * Note: According to CLAUDE.md, this file "exists but is not referenced"
+ * in the current application. It may be used for future testing or demos.
+ */
+
 import type { Step, Task, WorkLog } from "./types";
 
 const demoUserId = "mock-user";
 
-/**
- * Seed data for local development before persistence is in place.
- */
+// Tasks: Three sample tasks showing different statuses and priorities
 export const tasks: Task[] = [
   {
     id: "task-chrono-setup",
@@ -41,6 +52,9 @@ export const tasks: Task[] = [
   },
 ];
 
+// Steps: Six steps demonstrating nested hierarchy and task relationships
+// - "step-populate-mock" is a child of "step-config-lint" (shows parentStepId)
+// - Steps span across all three tasks
 export const steps: Step[] = [
   {
     id: "step-init-repo",
@@ -105,6 +119,9 @@ export const steps: Step[] = [
   },
 ];
 
+// Work logs: Four entries showing different log types (start, note, stop)
+// - worklog-4 demonstrates explicit durationMinutes
+// - worklog-1 shows start without matching stop (unpaired session)
 export const workLogs: WorkLog[] = [
   {
     id: "worklog-1",

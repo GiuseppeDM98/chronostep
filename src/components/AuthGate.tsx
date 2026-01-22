@@ -4,6 +4,15 @@ import { useState, type ReactNode } from "react";
 import { useAuth } from "../hooks/useAuth";
 import TopNav from "./TopNav";
 
+/**
+ * Authentication gate that wraps all application pages.
+ *
+ * Renders a sign-in/sign-up form for unauthenticated users, shows a loading
+ * state during Firebase session verification, and displays the protected content
+ * with navigation for authenticated users.
+ *
+ * @param children - Protected page content to render after authentication
+ */
 const AuthGate = ({ children }: { children: ReactNode }) => {
   const { user, loading, error, signIn, signUp, signOutUser, clearError } = useAuth();
   const [email, setEmail] = useState("");
@@ -31,6 +40,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Render loading state while verifying Firebase session
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
@@ -39,6 +49,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
     );
   }
 
+  // Render authentication form for unauthenticated users
   if (!user) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
@@ -110,6 +121,7 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
     );
   }
 
+  // Render protected content with navigation for authenticated users
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="border-b border-slate-200 bg-white">

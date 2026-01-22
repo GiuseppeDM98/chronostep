@@ -43,6 +43,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Unable to sign in");
+      // Re-throw the error after storing it so callers can handle both
+      // UI feedback (via context.error) and local error boundaries.
       throw authError;
     }
   }, []);
@@ -53,6 +55,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await createUserWithEmailAndPassword(firebaseAuth, email, password);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Unable to sign up");
+      // Re-throw the error after storing it so callers can handle both
+      // UI feedback (via context.error) and local error boundaries.
       throw authError;
     }
   }, []);
@@ -63,12 +67,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await signOut(firebaseAuth);
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Unable to sign out");
+      // Re-throw the error after storing it so callers can handle both
+      // UI feedback (via context.error) and local error boundaries.
       throw authError;
     }
   }, []);
 
   const clearError = useCallback(() => setError(null), []);
 
+  // Memoize the context value to prevent unnecessary re-renders of all consumers.
+  // Callbacks are already stable via useCallback, so the value only changes when
+  // auth state (user/loading/error) changes.
   const value = useMemo<AuthContextValue>(
     () => ({
       user,

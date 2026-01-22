@@ -1,3 +1,18 @@
+/**
+ * TaskDetailPage - Comprehensive task management view
+ *
+ * Displays a single task with:
+ * - Task editing modal with Esc warning on unsaved changes
+ * - Hierarchical step tree with parent/child relationships and auto-complete
+ * - Work log creation/editing with step association
+ * - Status filtering for steps
+ *
+ * Architecture notes:
+ * - 40+ state variables manage three modal forms (task, step, worklog)
+ * - Text snapshots track unsaved changes for Esc warning behavior
+ * - Step tree is built recursively and supports status filtering with descendants
+ * - Dates use UTC midnight to avoid timezone shifts in calendar views
+ */
 "use client";
 
 import Link from "next/link";
@@ -69,6 +84,11 @@ const parseTagsInput = (value: string) =>
 
 const formatTagsInput = (tags?: string[]) => tags?.join(", ") ?? "";
 
+// Convert ISO timestamp to date input value (YYYY-MM-DD format).
+// Uses .slice(0, 10) to extract date portion, which gives UTC date.
+// This keeps date grouping consistent across timezones - a task due
+// "2024-01-15" at UTC midnight appears as "2024-01-15" everywhere,
+// not shifted to local time (which could show "2024-01-14" in some zones).
 const toDateInputValue = (iso?: string) => {
   if (!iso) return "";
   return new Date(iso).toISOString().slice(0, 10);
@@ -109,6 +129,10 @@ const StepStatusBadge = ({ status }: { status: StepStatus }) => (
   </span>
 );
 
+// Filter step tree by status while preserving hierarchy.
+// When a parent doesn't match the filter, we "lift" its matching
+// descendants to the result array so they remain visible in the UI.
+// This prevents hiding relevant steps just because their parent differs.
 const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] => {
   const matches: StepNode[] = [];
 
@@ -125,7 +149,17 @@ const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] => {
   return matches;
 };
 
-// Recursive step list with inline status controls and edit actions.
+/**
+ * StepTree - Recursive step hierarchy display
+ *
+ * Renders nested steps with status badges, edit/delete actions,
+ * and visual nesting with border-left indentation.
+ *
+ * @param nodes - Step tree nodes to render (already filtered/ordered)
+ * @param onStatusChange - Handler for inline status updates
+ * @param onDelete - Handler for step deletion
+ * @param onEdit - Handler to open edit modal
+ */
 const StepTree = ({
   nodes,
   onStatusChange,
@@ -197,6 +231,14 @@ const StepTree = ({
   </ul>
 );
 
+/**
+ * TaskDetailPage - Main task detail view component
+ *
+ * Renders task header, step tree, work logs, and three modal forms.
+ * Heavy use of local state to manage modal interactions and form data.
+ *
+ * @param params - Next.js route params with task ID
+ */
 const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const router = useRouter();
   const {
@@ -224,6 +266,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     [workLogs, params.id],
   );
 
+  // ============================================================================
+  // State Management - Step Form
+  // ============================================================================
   const [newStepTitle, setNewStepTitle] = useState("");
   const [newStepParentId, setNewStepParentId] = useState("");
   const [newStepDescription, setNewStepDescription] = useState("");
@@ -238,6 +283,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingStepParentId, setEditingStepParentId] = useState("");
   const [editingStepOriginalParentId, setEditingStepOriginalParentId] = useState("");
 
+  // ============================================================================
+  // State Management - Work Log Form
+  // ============================================================================
   const [newLogType, setNewLogType] = useState<WorkLogType>("note");
   const [newLogMessage, setNewLogMessage] = useState("");
   const [newLogStepId, setNewLogStepId] = useState("");
@@ -248,9 +296,17 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingLogMessage, setEditingLogMessage] = useState("");
   const [editingLogStepId, setEditingLogStepId] = useState("");
   const [editingLogTags, setEditingLogTags] = useState("");
+
+  // ============================================================================
+  // State Management - Modal Visibility
+  // ============================================================================
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [isStepModalOpen, setIsStepModalOpen] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+
+  // ============================================================================
+  // State Management - Task Edit Modal
+  // ============================================================================
   const [taskTitleInput, setTaskTitleInput] = useState("");
   const [taskDescriptionInput, setTaskDescriptionInput] = useState("");
   const [taskStatusInput, setTaskStatusInput] = useState<TaskStatus>("todo");
@@ -259,6 +315,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [taskDueDateInput, setTaskDueDateInput] = useState("");
   const [taskFormError, setTaskFormError] = useState<string | null>(null);
   const [isTaskSaving, setIsTaskSaving] = useState(false);
+
+  // ============================================================================
+  // State Management - Esc Warning System
+  // ============================================================================
+  // Text snapshots capture original values to detect unsaved changes.
+  // When user presses Esc, we compare current input against snapshot.
   const taskTextSnapshot = useRef({ title: "", description: "", tags: "" });
   const stepTextSnapshot = useRef({ title: "", description: "" });
   const logTextSnapshot = useRef({ message: "", tags: "" });
@@ -268,6 +330,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
 
   const logTagLimit = 3;
 
+  // ============================================================================
+  // Memos - Computed Data
+  // ============================================================================
   const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
   const filteredStepTree = useMemo(() => {
     if (stepStatusFilter === "all") return stepTree;
@@ -277,6 +342,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     () => [...taskSteps].sort((first, second) => first.order - second.order),
     [taskSteps],
   );
+  // Collect all descendant IDs of the step being edited.
+  // Used to prevent circular references - can't make a step its own descendant.
+  // Traverses the tree recursively once the editing step is found.
   const editingStepDescendantIds = useMemo(() => {
     if (!editingStepId) return new Set<string>();
     const collectDescendants = (nodes: StepNode[]): Set<string> => {
@@ -314,6 +382,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const isEditingStep = Boolean(editingStepId);
   const isEditingLog = Boolean(editingLogId);
 
+  // ============================================================================
+  // Form Reset Functions
+  // ============================================================================
   const resetStepEditForm = () => {
     setEditingStepId(null);
     setEditingStepTitle("");
@@ -385,6 +456,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setIsTaskModalOpen(false);
   }
 
+  // ============================================================================
+  // Form Handlers - Task Edit
+  // ============================================================================
   const handleTaskEditSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!task) return;
@@ -403,6 +477,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
           .map((tag) => tag.trim())
           .filter(Boolean) ?? [];
       // Store due dates at UTC midnight to keep calendar math consistent across timezones.
+      // If we stored local time, a due date of "Jan 15" in Tokyo (UTC+9) would
+      // serialize to "Jan 14 15:00 UTC" and display as "Jan 14" in Los Angeles (UTC-8).
+      // Using UTC midnight ("Jan 15 00:00 UTC") ensures "Jan 15" displays everywhere.
       const dueDateIso = taskDueDateInput
         ? new Date(`${taskDueDateInput}T00:00:00.000Z`).toISOString()
         : undefined;
@@ -423,6 +500,10 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     }
   };
 
+  // ============================================================================
+  // Effects - Cleanup and Esc Warning System
+  // ============================================================================
+  // Close modal if edited entity is deleted elsewhere
   useEffect(() => {
     if (editingStepId && !taskSteps.some((step) => step.id === editingStepId)) {
       resetStepEditForm();
@@ -450,6 +531,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     }
   }, [defaultTaskTags, newLogTags]);
 
+  // Esc key handler for task modal with unsaved change detection.
+  // Compares current input values against snapshot taken at modal open.
+  // Only shows warning if text fields have been modified.
   useEffect(() => {
     if (!isTaskModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -607,6 +691,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     );
   }
 
+  // ============================================================================
+  // Form Handlers - Steps
+  // ============================================================================
   const handleAddStep = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newStepTitle.trim()) return;
@@ -696,6 +783,9 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setIsStepModalOpen(false);
   };
 
+  // ============================================================================
+  // Form Handlers - Work Logs
+  // ============================================================================
   const handleAddWorkLog = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newLogMessage.trim()) return;

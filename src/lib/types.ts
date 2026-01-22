@@ -20,6 +20,9 @@ export type TaskPriority = "low" | "medium" | "high";
 
 export type StepStatus = "todo" | "in_progress" | "done";
 
+// Note: StepStatus lacks a "blocked" state (unlike TaskStatus) because
+// steps are meant to be granular and immediately actionable. If a step
+// is blocked, users should handle that at the Task level.
 export type WorkLogType = "start" | "stop" | "note";
 
 /**
@@ -70,12 +73,18 @@ export interface WorkLog {
   durationMinutes?: number;
 }
 
+/**
+ * Complete snapshot of all user data for client-side state management.
+ * Used by useTaskStore to cache the entire dataset in memory.
+ */
 export type TaskStoreSnapshot = {
   tasks: Task[];
   steps: Step[];
   workLogs: WorkLog[];
 };
 
+// Input types strip server-managed fields (id, timestamps, userId) to
+// prevent clients from setting values that should be controlled server-side.
 export type CreateTaskInput = Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">;
 export type UpdateTaskInput = Partial<Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">>;
 
