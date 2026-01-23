@@ -249,6 +249,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     createStep,
     createWorkLog,
     updateStep,
+    updateStepOrders,
     updateTask,
     updateWorkLog,
     deleteStep,
@@ -282,6 +283,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
   const [editingStepDueDate, setEditingStepDueDate] = useState("");
   const [editingStepParentId, setEditingStepParentId] = useState("");
   const [editingStepOriginalParentId, setEditingStepOriginalParentId] = useState("");
+  const [editingStepOrder, setEditingStepOrder] = useState(1);
 
   // ============================================================================
   // State Management - Work Log Form
@@ -342,6 +344,14 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     () => [...taskSteps].sort((first, second) => first.order - second.order),
     [taskSteps],
   );
+  const editingStepOrderOptions = useMemo(() => {
+    if (!editingStepId) return [];
+    const parentId = editingStepParentId || undefined;
+    const siblingCount = taskSteps.filter(
+      (step) => step.parentStepId === parentId && step.id !== editingStepId,
+    ).length;
+    return Array.from({ length: siblingCount + 1 }, (_, index) => index + 1);
+  }, [taskSteps, editingStepParentId, editingStepId]);
   // Collect all descendant IDs of the step being edited.
   // Used to prevent circular references - can't make a step its own descendant.
   // Traverses the tree recursively once the editing step is found.
@@ -393,6 +403,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingStepDueDate("");
     setEditingStepParentId("");
     setEditingStepOriginalParentId("");
+    setEditingStepOrder(1);
     setStepEscWarning(null);
   };
 
@@ -510,6 +521,12 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
       setIsStepModalOpen(false);
     }
   }, [editingStepId, taskSteps]);
+
+  useEffect(() => {
+    if (!isEditingStep) return;
+    const maxOrder = Math.max(1, editingStepOrderOptions.length || 1);
+    setEditingStepOrder((current) => Math.min(Math.max(current, 1), maxOrder));
+  }, [isEditingStep, editingStepOrderOptions.length]);
 
   useEffect(() => {
     if (editingLogId && !taskLogs.some((log) => log.id === editingLogId)) {
@@ -746,6 +763,7 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     setEditingStepDueDate(toDateInputValue(step.dueDate));
     setEditingStepParentId(step.parentStepId ?? "");
     setEditingStepOriginalParentId(step.parentStepId ?? "");
+    setEditingStepOrder(step.order);
     stepTextSnapshot.current = {
       title: step.title.trim(),
       description: (step.description ?? "").trim(),
@@ -760,25 +778,49 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
 
     const nextParentId = editingStepParentId || undefined;
     const parentChanged = editingStepOriginalParentId !== (nextParentId ?? "");
+    const siblingSteps = taskSteps
+      .filter((step) => step.parentStepId === nextParentId && step.id !== editingStepId)
+      .sort((first, second) => first.order - second.order);
+    const maxOrder = siblingSteps.length + 1;
+    const nextOrder = Math.min(Math.max(editingStepOrder, 1), maxOrder);
     const updatePayload: Partial<Step> = {
       title: editingStepTitle.trim(),
       description: editingStepDescription.trim() || undefined,
       status: editingStepStatus,
       parentStepId: nextParentId,
+      order: nextOrder,
     };
     const dueDateIso = editingStepDueDate
       ? new Date(`${editingStepDueDate}T00:00:00.000Z`).toISOString()
       : undefined;
-    if (dueDateIso) {
-      updatePayload.dueDate = dueDateIso;
-    }
-    if (parentChanged) {
-      const siblingOrders = taskSteps
-        .filter((step) => step.parentStepId === nextParentId && step.id !== editingStepId)
-        .map((step) => step.order);
-      updatePayload.order = siblingOrders.length > 0 ? Math.max(...siblingOrders) + 1 : 1;
-    }
+    updatePayload.dueDate = dueDateIso;
     await updateStep(editingStepId, updatePayload);
+    const orderUpdates: Array<{ id: string; order: number }> = [];
+    const reorderedIds = siblingSteps.map((step) => step.id);
+    reorderedIds.splice(nextOrder - 1, 0, editingStepId);
+    reorderedIds.forEach((id, index) => {
+      if (id === editingStepId) return;
+      const step = taskSteps.find((candidate) => candidate.id === id);
+      const targetOrder = index + 1;
+      if (step && step.order !== targetOrder) {
+        orderUpdates.push({ id: step.id, order: targetOrder });
+      }
+    });
+    if (parentChanged) {
+      const previousParentId = editingStepOriginalParentId || undefined;
+      const previousSiblings = taskSteps
+        .filter((step) => step.parentStepId === previousParentId && step.id !== editingStepId)
+        .sort((first, second) => first.order - second.order);
+      previousSiblings.forEach((step, index) => {
+        const targetOrder = index + 1;
+        if (step.order !== targetOrder) {
+          orderUpdates.push({ id: step.id, order: targetOrder });
+        }
+      });
+    }
+    if (orderUpdates.length > 0) {
+      await updateStepOrders(orderUpdates);
+    }
     resetStepEditForm();
     setIsStepModalOpen(false);
   };
@@ -1233,6 +1275,22 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
                       ))}
                     </select>
                   </div>
+                  {isEditingStep ? (
+                    <div>
+                      <label className="text-sm font-medium text-slate-700">Priorita</label>
+                      <select
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        value={editingStepOrder}
+                        onChange={(event) => setEditingStepOrder(Number(event.target.value))}
+                      >
+                        {editingStepOrderOptions.map((order) => (
+                          <option key={order} value={order}>
+                            {order}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
                   <div className="flex items-center justify-end gap-3">
                     <button
                       type="button"

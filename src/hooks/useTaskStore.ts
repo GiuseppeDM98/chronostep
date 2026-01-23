@@ -434,6 +434,21 @@ export const useTaskStore = () => {
     ],
   );
 
+  const updateStepOrders = useCallback(
+    async (updates: Array<{ id: string; order: number }>) => {
+      ensureUserId();
+      if (updates.length === 0) return;
+      const now = new Date().toISOString();
+      const batch = writeBatch(db);
+      updates.forEach(({ id, order }) => {
+        batch.update(doc(db, "steps", id), { order, updatedAt: now });
+      });
+      await batch.commit();
+      await refreshState();
+    },
+    [db, ensureUserId, refreshState],
+  );
+
   const deleteStep = useCallback(
     async (id: string) => {
       ensureUserId();
@@ -499,6 +514,7 @@ export const useTaskStore = () => {
     deleteTask,
     createStep,
     updateStep,
+    updateStepOrders,
     deleteStep,
     createWorkLog,
     updateWorkLog,
