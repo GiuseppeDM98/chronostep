@@ -41,6 +41,9 @@ This document provides detailed technical information about ChronoStep's archite
 - Shared UI: top navigation and auth gate (`src/components`).
 - Shared UI: demo account credentials are displayed on the login screen for trials.
 
+## Recent changes (last 2-3 months)
+- Insights: the "Organizza priorità e scadenze" focus lists show only active tasks (exclude `done`).
+
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
 - Step: order, optional parentStepId, status, dueDate, userId.

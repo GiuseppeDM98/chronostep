@@ -72,6 +72,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Step status filtering shows only matching steps/substeps; non-matching parents are not shown.
 - Task detail uses modals for add/edit flows (task, steps, work logs) with Esc-to-close warnings on unsaved text.
 - Copy is mixed Italian/English; keep tone consistent.
+- Insights "Organizza priorità e scadenze" lists use active tasks only (`status !== "done"`).
 
 ## Key helpers
 - `src/lib/insights.ts` holds derived metrics and summaries.

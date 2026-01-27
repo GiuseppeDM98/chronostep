@@ -131,8 +131,13 @@ const InsightsPageContent = () => {
   const focusedTask = tasks.find((task) => task.id === focusedTaskId);
   const focusedTaskActivity = focusedTask ? taskActivity.get(focusedTask.id) : undefined;
 
+  const activeTasks = useMemo(
+    () => tasks.filter((task) => task.status !== "done"),
+    [tasks],
+  );
+
   const upcomingTasks = useMemo(() => {
-    return tasks
+    return activeTasks
       .filter((task) => {
         if (!task.dueDate) return false;
         const due = new Date(task.dueDate);
@@ -144,13 +149,13 @@ const InsightsPageContent = () => {
         const dueB = new Date(b.dueDate ?? 0).valueOf();
         return dueA - dueB;
       });
-  }, [tasks, today]);
+  }, [activeTasks, today]);
 
   const recentTasks = useMemo(() => {
     const threshold = new Date(today);
     // Use a rolling window of recent activity instead of calendar weeks.
     threshold.setDate(today.getDate() - RECENT_ACTIVITY_DAYS);
-    return tasks
+    return activeTasks
       .filter((task) => {
         const lastLog = taskActivity.get(task.id)?.lastLogTimestamp;
         if (!lastLog) return false;
@@ -161,12 +166,12 @@ const InsightsPageContent = () => {
         const lastB = taskActivity.get(b.id)?.lastLogTimestamp ?? "";
         return new Date(lastB).valueOf() - new Date(lastA).valueOf();
       });
-  }, [tasks, taskActivity, today]);
+  }, [activeTasks, taskActivity, today]);
 
   const priorityLevels: Array<Task["priority"] | "none"> = ["high", "medium", "low", "none"];
   const priorityStats = useMemo(() => {
     return priorityLevels.map((level) => {
-      const bucket = tasks.filter(
+      const bucket = activeTasks.filter(
         (task) => (task.priority ?? "none") === level,
       );
       const summary = bucket.reduce(
@@ -183,7 +188,7 @@ const InsightsPageContent = () => {
       );
       return { level, ...summary };
     });
-  }, [stepsByTask, taskActivity, tasks]);
+  }, [stepsByTask, taskActivity, activeTasks]);
 
   const maxPriorityMinutes = Math.max(...priorityStats.map((item) => item.minutes), 1);
 
