@@ -31,6 +31,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - No API routes or server actions in this repo.
 - `AuthGate` wraps all pages to enforce auth and render the top nav.
 - Route params are used for task detail (`/tasks/[id]`).
+- **Next.js 16+**: Dynamic route params are now Promises. Use React's `use()` hook to unwrap them in client components.
 
 ## Auth flow
 - `AuthProvider` in `src/hooks/useAuth.tsx` is the single auth context.
@@ -108,6 +109,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Due dates are converted via `new Date('${yyyy-mm-dd}T00:00:00.000Z')`.
 - Localized date formatting uses `toLocaleDateString` and `toLocaleString`.
 - JSX copy must escape `<`/`>` (wrap arrow text in `{""}` or use HTML entities).
+- **Dynamic routes (Next.js 16+)**: Import `use` from React and unwrap params: `const { id } = use(params);`
 
 ## Known gaps
 - No tests or test framework in repo.

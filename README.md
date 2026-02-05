@@ -3,7 +3,7 @@
 **Personal task tracking with hierarchical steps and time-aware work logging**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Next.js](https://img.shields.io/badge/Next.js-14.1.0-black)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.1.6-black)](https://nextjs.org/)
 [![Firebase](https://img.shields.io/badge/Firebase-11.0.1-orange)](https://firebase.google.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3.3-blue)](https://www.typescriptlang.org/)
 
@@ -59,7 +59,7 @@ For detailed setup instructions, see [SETUP.md](./SETUP.md).
 
 ## Tech Stack
 
-- **[Next.js](https://nextjs.org/)** 14.1.0 - React framework with App Router
+- **[Next.js](https://nextjs.org/)** 16.1.6 - React framework with App Router
 - **[React](https://react.dev/)** 18.2.0 - UI library
 - **[TypeScript](https://www.typescriptlang.org/)** 5.3.3 - Type-safe JavaScript
 - **[Firebase](https://firebase.google.com/)** 11.0.1 - Authentication and Firestore database

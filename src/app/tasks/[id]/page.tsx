@@ -17,7 +17,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "../../../components/AuthGate";
 import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 import { useTaskStore } from "../../../hooks/useTaskStore";
@@ -237,9 +237,10 @@ const StepTree = ({
  * Renders task header, step tree, work logs, and three modal forms.
  * Heavy use of local state to manage modal interactions and form data.
  *
- * @param params - Next.js route params with task ID
+ * @param params - Next.js route params with task ID (Promise in Next.js 16+)
  */
-const TaskDetailPage = ({ params }: { params: { id: string } }) => {
+const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
+  const { id } = use(params);
   const router = useRouter();
   const {
     tasks,
@@ -257,14 +258,14 @@ const TaskDetailPage = ({ params }: { params: { id: string } }) => {
     deleteWorkLog,
   } = useTaskStore();
 
-  const task = tasks.find((candidate) => candidate.id === params.id);
+  const task = tasks.find((candidate) => candidate.id === id);
   const taskSteps = useMemo(
-    () => steps.filter((step) => step.taskId === params.id),
-    [steps, params.id],
+    () => steps.filter((step) => step.taskId === id),
+    [steps, id],
   );
   const taskLogs = useMemo(
-    () => workLogs.filter((log) => log.taskId === params.id),
-    [workLogs, params.id],
+    () => workLogs.filter((log) => log.taskId === id),
+    [workLogs, id],
   );
 
   // ============================================================================

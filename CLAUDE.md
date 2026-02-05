@@ -7,16 +7,17 @@
 This document provides detailed technical information about ChronoStep's architecture, implementation decisions, and known issues. Keep information concise and actionable.
 
 ## Tech stack (versions from package.json)
-- Next.js: 14.1.0
+- Next.js: 16.1.6
 - React: 18.2.0
 - React DOM: 18.2.0
 - TypeScript: 5.3.3
 - Tailwind CSS: 3.4.1
 - Firebase client SDK: 11.0.1
-- Firebase Admin SDK: 12.5.0
+- Firebase Admin SDK: 13.6.1
 - PostCSS: 8.4.33
 - Autoprefixer: 10.4.16
 - Node.js: not pinned in repo (check local runtime)
+- npm overrides: fast-xml-parser@5.3.4 (security fix for firebase-admin dependency)
 
 ## High-level architecture
 - Next.js App Router renders client-side pages for all routes.
@@ -44,6 +45,8 @@ This document provides detailed technical information about ChronoStep's archite
 ## Recent changes (last 2-3 months)
 - Insights: priority/tag drilldown in-page, driven by query params and toggleable by clicking the active chip.
 - Insights: the "Organizza priorità e scadenze" focus lists show only active tasks (exclude `done`).
+- Security: upgraded Next.js to 16.1.6 and firebase-admin to 13.6.1 to resolve 3 high severity vulnerabilities.
+- Migration: updated dynamic route params handling for Next.js 16 (params are now Promises, use React's `use()` hook).
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
