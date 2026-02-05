@@ -42,6 +42,7 @@ This document provides detailed technical information about ChronoStep's archite
 - Shared UI: demo account credentials are displayed on the login screen for trials.
 
 ## Recent changes (last 2-3 months)
+- Insights: priority/tag drilldown in-page, driven by query params and toggleable by clicking the active chip.
 - Insights: the "Organizza priorità e scadenze" focus lists show only active tasks (exclude `done`).
 
 ## Data model summary

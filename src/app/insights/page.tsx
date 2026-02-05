@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import AuthGate from "../../components/AuthGate";
 import { useTaskStore } from "../../hooks/useTaskStore";
 import {
@@ -49,6 +49,31 @@ const daysBetween = (target: Date, from: Date) =>
 
 const monthLabel = (year: number, month: number) =>
   new Date(year, month).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+type FocusState =
+  | { type: "tag"; value: string }
+  | { type: "priority"; value: Task["priority"] | "none" }
+  | null;
+
+const PRIORITY_LEVELS: Array<Task["priority"] | "none"> = [
+  "high",
+  "medium",
+  "low",
+  "none",
+];
+
+const getFocusFromParams = (searchParams: ReturnType<typeof useSearchParams>): FocusState => {
+  const tag = searchParams.get("tag")?.trim();
+  // Tag wins when both params are present to keep the focus consistent and explicit.
+  if (tag) return { type: "tag", value: tag };
+
+  const priority = searchParams.get("priority")?.trim() as Task["priority"] | "none" | undefined;
+  if (priority && PRIORITY_LEVELS.includes(priority)) {
+    return { type: "priority", value: priority };
+  }
+
+  return null;
+};
 
 /**
  * Build calendar grid aligned to Monday (Italian week layout).
@@ -127,9 +152,27 @@ const InsightsPageContent = () => {
   const { year: calendarYear, month: calendarMonth } = calendarState;
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const router = useRouter();
   const focusedTaskId = searchParams.get("task");
   const focusedTask = tasks.find((task) => task.id === focusedTaskId);
   const focusedTaskActivity = focusedTask ? taskActivity.get(focusedTask.id) : undefined;
+  const focusState = useMemo(() => getFocusFromParams(searchParams), [searchParams]);
+
+  const setFocusParams = (next: { tag?: string | null; priority?: Task["priority"] | "none" | null }) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.tag) {
+      params.set("tag", next.tag);
+    } else {
+      params.delete("tag");
+    }
+    if (next.priority) {
+      params.set("priority", next.priority);
+    } else {
+      params.delete("priority");
+    }
+    const query = params.toString();
+    router.replace(query ? `/insights?${query}` : "/insights", { scroll: false });
+  };
 
   const activeTasks = useMemo(
     () => tasks.filter((task) => task.status !== "done"),
@@ -168,9 +211,8 @@ const InsightsPageContent = () => {
       });
   }, [activeTasks, taskActivity, today]);
 
-  const priorityLevels: Array<Task["priority"] | "none"> = ["high", "medium", "low", "none"];
   const priorityStats = useMemo(() => {
-    return priorityLevels.map((level) => {
+    return PRIORITY_LEVELS.map((level) => {
       const bucket = activeTasks.filter(
         (task) => (task.priority ?? "none") === level,
       );
@@ -215,6 +257,58 @@ const InsightsPageContent = () => {
       .sort((a, b) => b.minutes - a.minutes || b.tasks - a.tasks)
       .slice(0, 6);
   }, [stepsByTask, taskActivity, tasks]);
+
+  const taskTitleById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task.title])),
+    [tasks],
+  );
+  const stepTitleById = useMemo(
+    () => new Map(steps.map((step) => [step.id, step.title])),
+    [steps],
+  );
+
+  const focusTasks = useMemo(() => {
+    if (!focusState) return [];
+    if (focusState.type === "priority") {
+      return activeTasks.filter(
+        (task) => (task.priority ?? "none") === focusState.value,
+      );
+    }
+    return tasks.filter((task) => task.tags?.includes(focusState.value));
+  }, [activeTasks, focusState, tasks]);
+
+  const focusTaskIds = useMemo(
+    () => new Set(focusTasks.map((task) => task.id)),
+    [focusTasks],
+  );
+
+  const focusSteps = useMemo(() => {
+    if (!focusState) return [];
+    return steps
+      .filter((step) => focusTaskIds.has(step.taskId))
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+  }, [focusState, focusTaskIds, steps]);
+
+  const focusLogs = useMemo(() => {
+    if (!focusState) return [];
+    const filtered =
+      focusState.type === "priority"
+        ? workLogs.filter((log) => focusTaskIds.has(log.taskId))
+        : workLogs.filter((log) => log.tags.includes(focusState.value));
+    return filtered.sort(
+      (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
+    );
+  }, [focusState, focusTaskIds, workLogs]);
+
+  const focusLabel = useMemo(() => {
+    if (!focusState) return "";
+    if (focusState.type === "priority") {
+      return `Dettaglio priorità: ${describePriority(
+        focusState.value === "none" ? undefined : focusState.value,
+      )}`;
+    }
+    return `Dettaglio tag: #${focusState.value}`;
+  }, [focusState]);
 
   const calendarDays = useMemo(
     () => buildCalendarDays(calendarYear, calendarMonth, tasks),
@@ -381,10 +475,27 @@ const InsightsPageContent = () => {
                 {priorityStats.map((stat) => {
                   const label = stat.level === "none" ? "Nessuna" : describePriority(stat.level as Task["priority"]);
                   const width = `${Math.min(100, (stat.minutes / maxPriorityMinutes) * 100)}%`;
+                  const isFocused =
+                    focusState?.type === "priority" && focusState.value === stat.level;
                   return (
                     <li key={stat.level} className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="font-semibold text-slate-700">{label}</span>
+                        <button
+                          type="button"
+                          className={`rounded-full px-2 py-0.5 text-left font-semibold transition ${
+                            isFocused
+                              ? "bg-slate-900 text-white"
+                              : "text-slate-700 hover:bg-slate-100"
+                          }`}
+                          aria-pressed={isFocused}
+                          onClick={() =>
+                            isFocused
+                              ? setFocusParams({ priority: null, tag: null })
+                              : setFocusParams({ priority: stat.level, tag: null })
+                          }
+                        >
+                          {label}
+                        </button>
                         <span className="text-slate-500">
                           {stat.doneSteps}/{stat.totalSteps} steps · {stat.minutes} min
                         </span>
@@ -417,10 +528,27 @@ const InsightsPageContent = () => {
                       100,
                       (stat.minutes / Math.max(tagStats[0]?.minutes ?? 1, 1)) * 100,
                     )}%`;
+                    const isFocused =
+                      focusState?.type === "tag" && focusState.value === stat.tag;
                     return (
                       <li key={stat.tag}>
                         <div className="flex items-center justify-between text-sm">
-                          <span className="font-semibold text-slate-700">#{stat.tag}</span>
+                          <button
+                            type="button"
+                            className={`rounded-full px-2 py-0.5 text-left font-semibold transition ${
+                              isFocused
+                                ? "bg-amber-500 text-white"
+                                : "text-slate-700 hover:bg-amber-50"
+                            }`}
+                            aria-pressed={isFocused}
+                            onClick={() =>
+                              isFocused
+                                ? setFocusParams({ tag: null, priority: null })
+                                : setFocusParams({ tag: stat.tag, priority: null })
+                            }
+                          >
+                            #{stat.tag}
+                          </button>
                           <span className="text-slate-500">
                             {stat.tasks} task · {stat.doneSteps}/{stat.totalSteps} steps
                           </span>
@@ -435,6 +563,130 @@ const InsightsPageContent = () => {
               )}
             </div>
           </section>
+
+          {focusState ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Drilldown</p>
+                  <h2 className="text-xl font-semibold text-slate-900">{focusLabel}</h2>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-slate-500">
+                  <span>{focusTasks.length} task</span>
+                  <span>{focusSteps.length} step</span>
+                  <span>{focusLogs.length} log</span>
+                  <button
+                    type="button"
+                    className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                    onClick={() => setFocusParams({ tag: null, priority: null })}
+                  >
+                    Reset focus
+                  </button>
+                </div>
+              </div>
+
+              {focusTasks.length === 0 && focusSteps.length === 0 && focusLogs.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                  Nessun elemento trovato per il focus selezionato.
+                </div>
+              ) : (
+                <div className="mt-6 grid gap-6 lg:grid-cols-3">
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-700">Task</h3>
+                    {focusTasks.length === 0 ? (
+                      <p className="text-sm text-slate-500">Nessun task collegato.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {focusTasks.map((task) => {
+                          const summary = getTaskStepSummary(stepsByTask, task.id);
+                          return (
+                            <li key={task.id} className="rounded-xl border border-slate-200 p-3">
+                              <p className="text-sm font-semibold text-slate-900">{task.title}</p>
+                              <p className="text-xs text-slate-500">
+                                Status {task.status.replace("_", " ")} •{" "}
+                                {describePriority(task.priority)}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Progress {summary.done}/{summary.total} steps
+                              </p>
+                              <Link
+                                href={`/tasks/${task.id}`}
+                                className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
+                              >
+                                Vai al task →
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-700">Step</h3>
+                    {focusSteps.length === 0 ? (
+                      <p className="text-sm text-slate-500">Nessuna step collegata.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {focusSteps.map((step) => (
+                          <li key={step.id} className="rounded-xl border border-slate-200 p-3">
+                            <p className="text-sm font-semibold text-slate-900">{step.title}</p>
+                            <p className="text-xs text-slate-500">
+                              Task: {taskTitleById.get(step.taskId) ?? "Task sconosciuto"}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              Status {step.status.replace("_", " ")}
+                            </p>
+                            <Link
+                              href={`/tasks/${step.taskId}`}
+                              className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
+                            >
+                              Apri task →
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-slate-700">Work log</h3>
+                    {focusLogs.length === 0 ? (
+                      <p className="text-sm text-slate-500">Nessun work log collegato.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {focusLogs.map((log) => (
+                          <li key={log.id} className="rounded-xl border border-slate-200 p-3">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {taskTitleById.get(log.taskId) ?? "Task sconosciuto"}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {log.type.toUpperCase()} •{" "}
+                              {new Date(log.timestamp).toLocaleString()}
+                            </p>
+                            {log.stepId ? (
+                              <p className="text-xs text-slate-500">
+                                Step: {stepTitleById.get(log.stepId) ?? log.stepId}
+                              </p>
+                            ) : null}
+                            {log.message ? (
+                              <p className="text-xs text-slate-600">{log.message}</p>
+                            ) : null}
+                            <Link
+                              href={`/tasks/${log.taskId}`}
+                              className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
+                            >
+                              Apri task →
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
