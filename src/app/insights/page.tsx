@@ -20,6 +20,7 @@ import {
   buildStepsByTask,
   buildTaskActivity,
   buildDailyWorkLogTotals,
+  buildMonthlyTrends,
   describePriority,
   getTaskStepSummary,
 } from "../../lib/insights";
@@ -44,6 +45,16 @@ const formatFullDate = (iso: string) =>
     month: "long",
     day: "numeric",
   });
+
+// Format minutes into compact hours/minutes label for summary cards.
+const formatMinutesAsHours = (totalMinutes: number) => {
+  const rounded = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${minutes}m`;
+};
 
 const daysBetween = (target: Date, from: Date) =>
   Math.ceil((target.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
@@ -279,6 +290,38 @@ const InsightsPageContent = () => {
       .slice(0, 6);
   }, [stepsByTask, taskActivity, tasks]);
 
+  const monthlyTrendsMap = useMemo(() => buildMonthlyTrends(workLogs), [workLogs]);
+  const trendMonths = useMemo(() => {
+    const months: string[] = [];
+    for (let offset = 0; offset < 6; offset += 1) {
+      const date = new Date(today.getFullYear(), today.getMonth() - offset, 1);
+      months.push(
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      );
+    }
+    return months;
+  }, [today]);
+  const trendEntries = useMemo(
+    () =>
+      trendMonths.map((monthKey) => {
+        return (
+          monthlyTrendsMap.get(monthKey) ?? {
+            monthKey,
+            totalMinutes: 0,
+            topTaskId: undefined,
+            topTaskMinutes: 0,
+            topTag: undefined,
+            topTagMinutes: 0,
+          }
+        );
+      }),
+    [monthlyTrendsMap, trendMonths],
+  );
+  const hasTrendData = useMemo(
+    () => trendEntries.some((entry) => entry.totalMinutes > 0),
+    [trendEntries],
+  );
+
   const taskTitleById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task.title])),
     [tasks],
@@ -380,6 +423,14 @@ const InsightsPageContent = () => {
         return { year: year - 1, month: 11 };
       }
       return { year, month: month - 1 };
+    });
+  };
+
+  const formatMonthLabel = (monthKey: string) => {
+    const [year, month] = monthKey.split("-").map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
     });
   };
 
@@ -726,6 +777,66 @@ const InsightsPageContent = () => {
               )}
             </section>
           ) : null}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Trend mensili</p>
+                <h2 className="text-xl font-semibold text-slate-900">Ore, top task e top tag</h2>
+              </div>
+              <span className="text-xs text-slate-400">Ultimi 6 mesi</span>
+            </div>
+            {!hasTrendData ? (
+              <p className="mt-4 text-sm text-slate-500">
+                Nessun dato negli ultimi 6 mesi.
+              </p>
+            ) : (
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                {trendEntries.map((entry) => {
+                  const topTaskLabel = entry.topTaskId
+                    ? taskTitleById.get(entry.topTaskId) ?? "Task sconosciuto"
+                    : "—";
+                  const topTagLabel = entry.topTag ? `#${entry.topTag}` : "—";
+                  return (
+                    <article
+                      key={entry.monthKey}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {formatMonthLabel(entry.monthKey)}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Totale {formatMinutesAsHours(entry.totalMinutes)}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
+                          {formatMinutesAsHours(entry.totalMinutes)}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2 text-sm text-slate-600">
+                        <p>
+                          <span className="font-semibold text-slate-700">Top task:</span>{" "}
+                          {topTaskLabel}{" "}
+                          {entry.topTaskMinutes > 0
+                            ? `(${formatMinutesAsHours(entry.topTaskMinutes)})`
+                            : ""}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-700">Top tag:</span>{" "}
+                          {topTagLabel}{" "}
+                          {entry.topTagMinutes > 0
+                            ? `(${formatMinutesAsHours(entry.topTagMinutes)})`
+                            : ""}
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">

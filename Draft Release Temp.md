@@ -3,6 +3,7 @@
 - Added a quick toggle to clear the active Insights focus by clicking the same priority or tag.
 - Added a Start/Stop timer in task detail to track live work sessions and save time automatically.
 - Added a calendar heatmap in Insights to visualize daily work log minutes for the selected month.
+- Added a monthly trends section in Insights with total hours, top task, and top tag for the last six months.
 
 ## 🔧 Improvements
 - Added a global timer indicator with a live HH:MM:SS display and quick link back to the running task.

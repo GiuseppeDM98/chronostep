@@ -26,7 +26,7 @@ Built with modern web technologies and Firebase for authentication and data stor
 - **Live Timer** - Start/stop a live timer in task detail with HH:MM:SS display and automatic work log creation
 - **Timeline View** - See a chronological view of all your activity across tasks with filtering by month/year and tags
 - **Today View** - Focus on tasks and steps due today to stay on track
-- **Insights Dashboard** - Visualize upcoming deadlines and recent activity for active tasks, plus priority distribution, tag summaries, an interactive calendar with daily work log heatmap, and click-through drilldowns by priority or tag
+- **Insights Dashboard** - Visualize upcoming deadlines and recent activity for active tasks, plus priority distribution, tag summaries, monthly trends, an interactive calendar with daily work log heatmap, and click-through drilldowns by priority or tag
 - **Task Search & Filters** - Search by title, description, or tags; filter by status (active, todo, in progress, done, blocked)
 - **Priority Management** - Organize tasks by priority (low, medium, high) with automatic sorting
 - **Firebase Authentication** - Secure email/password authentication with per-user data isolation

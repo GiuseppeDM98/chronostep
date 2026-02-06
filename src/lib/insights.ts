@@ -44,6 +44,15 @@ export type MonthlyReportEntry = {
   highlights: string[];
 };
 
+export type MonthlyTrendEntry = {
+  monthKey: string;
+  totalMinutes: number;
+  topTaskId?: string;
+  topTaskMinutes: number;
+  topTag?: string;
+  topTagMinutes: number;
+};
+
 export type TaskTagSummary = {
   tags: string[];
   overflowCount: number;
@@ -214,6 +223,71 @@ export const buildMonthlyReportSummary = (
       (a, b) =>
         b.totalMinutes - a.totalMinutes || b.logCount - a.logCount || a.taskId.localeCompare(b.taskId),
     );
+};
+
+/**
+ * Build monthly trend snapshots for totals and top contributors.
+ *
+ * @param workLogs - Array of work logs to analyze
+ * @returns Map keyed by YYYY-MM with total minutes, top task, and top tag stats
+ *
+ * Uses local calendar months to match Report/Timeline filters and user expectations.
+ */
+export const buildMonthlyTrends = (workLogs: WorkLog[]) => {
+  const { logDurations } = buildTaskActivity(workLogs);
+  const totalMinutesByMonth = new Map<string, number>();
+  const taskMinutesByMonth = new Map<string, Map<string, number>>();
+  const tagMinutesByMonth = new Map<string, Map<string, number>>();
+
+  workLogs.forEach((log) => {
+    const minutes = logDurations.get(log.id);
+    if (!minutes) return;
+    const date = new Date(log.timestamp);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+    totalMinutesByMonth.set(monthKey, (totalMinutesByMonth.get(monthKey) ?? 0) + minutes);
+
+    const taskTotals = taskMinutesByMonth.get(monthKey) ?? new Map<string, number>();
+    taskTotals.set(log.taskId, (taskTotals.get(log.taskId) ?? 0) + minutes);
+    taskMinutesByMonth.set(monthKey, taskTotals);
+
+    const tagTotals = tagMinutesByMonth.get(monthKey) ?? new Map<string, number>();
+    log.tags.forEach((tag) => {
+      const trimmed = tag.trim();
+      if (!trimmed) return;
+      tagTotals.set(trimmed, (tagTotals.get(trimmed) ?? 0) + minutes);
+    });
+    tagMinutesByMonth.set(monthKey, tagTotals);
+  });
+
+  const pickTopEntry = (bucket?: Map<string, number>) => {
+    if (!bucket) return { id: undefined, minutes: 0 };
+    let topId: string | undefined;
+    let topMinutes = 0;
+    bucket.forEach((minutes, id) => {
+      if (minutes > topMinutes || (minutes === topMinutes && id < (topId ?? ""))) {
+        topId = id;
+        topMinutes = minutes;
+      }
+    });
+    return { id: topId, minutes: topMinutes };
+  };
+
+  const trends = new Map<string, MonthlyTrendEntry>();
+  totalMinutesByMonth.forEach((totalMinutes, monthKey) => {
+    const taskTop = pickTopEntry(taskMinutesByMonth.get(monthKey));
+    const tagTop = pickTopEntry(tagMinutesByMonth.get(monthKey));
+    trends.set(monthKey, {
+      monthKey,
+      totalMinutes,
+      topTaskId: taskTop.id,
+      topTaskMinutes: taskTop.minutes,
+      topTag: tagTop.id,
+      topTagMinutes: tagTop.minutes,
+    });
+  });
+
+  return trends;
 };
 
 /**

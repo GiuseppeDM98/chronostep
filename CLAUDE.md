@@ -45,6 +45,7 @@ This document provides detailed technical information about ChronoStep's archite
 
 ## Recent changes (last 2-3 months)
 - Insights: calendar heatmap showing daily work log minutes for the selected month.
+- Insights: monthly trends snapshot with totals, top task, and top tag for the last 6 months.
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.

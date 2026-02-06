@@ -85,6 +85,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `buildTaskActivity` computes durations and last log per task.
 - `buildDailyWorkLogTotals` aggregates work log minutes by UTC day.
 - `buildMonthlyReportSummary` aggregates per-task totals and highlights for reports.
+- `buildMonthlyTrends` aggregates monthly totals plus top task/tag by minutes.
 - `groupWorkLogsByTag` groups logs by tag for filters.
 - `buildTaskTagSummary` summarizes top tags per task for chips.
 - `describePriority` normalizes priority labels.
