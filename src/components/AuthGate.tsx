@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { useTimer } from "../hooks/useTimer";
 import TopNav from "./TopNav";
 
 /**
@@ -15,10 +17,19 @@ import TopNav from "./TopNav";
  */
 const AuthGate = ({ children }: { children: ReactNode }) => {
   const { user, loading, error, signIn, signUp, signOutUser, clearError } = useAuth();
+  const { timerState, elapsedSeconds } = useTimer();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [submitting, setSubmitting] = useState(false);
+
+  const formatElapsed = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => value.toString().padStart(2, "0");
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,8 +143,20 @@ const AuthGate = ({ children }: { children: ReactNode }) => {
     <div className="min-h-screen bg-slate-50">
       <div className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-3 text-sm text-slate-600">
-          <div>
-            Signed in as <span className="font-semibold">{user.email ?? user.uid}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              Signed in as <span className="font-semibold">{user.email ?? user.uid}</span>
+            </div>
+            {timerState.status === "running" ? (
+              <Link
+                href={`/tasks/${timerState.taskId}`}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 transition hover:border-emerald-300"
+              >
+                Timer in corso: {timerState.taskTitle}
+                {timerState.stepTitle ? ` • ${timerState.stepTitle}` : ""} •{" "}
+                {formatElapsed(elapsedSeconds)}
+              </Link>
+            ) : null}
           </div>
           <button
             type="button"

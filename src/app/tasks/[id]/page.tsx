@@ -21,6 +21,7 @@ import { use, useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "../../../components/AuthGate";
 import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 import { useTaskStore } from "../../../hooks/useTaskStore";
+import { useTimer } from "../../../hooks/useTimer";
 
 type StepNode = Step & { children: StepNode[] };
 
@@ -257,6 +258,7 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
     deleteTask,
     deleteWorkLog,
   } = useTaskStore();
+  const { timerState, elapsedSeconds, startTimer, stopTimer } = useTimer();
 
   const task = tasks.find((candidate) => candidate.id === id);
   const taskSteps = useMemo(
@@ -299,6 +301,13 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
   const [editingLogMessage, setEditingLogMessage] = useState("");
   const [editingLogStepId, setEditingLogStepId] = useState("");
   const [editingLogTags, setEditingLogTags] = useState("");
+
+  // ============================================================================
+  // State Management - Timer
+  // ============================================================================
+  const [timerStepId, setTimerStepId] = useState("");
+  const [timerWarning, setTimerWarning] = useState<string | null>(null);
+  const [isTimerSaving, setIsTimerSaving] = useState(false);
 
   // ============================================================================
   // State Management - Modal Visibility
@@ -392,6 +401,17 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
   );
   const isEditingStep = Boolean(editingStepId);
   const isEditingLog = Boolean(editingLogId);
+  const isTimerRunning = timerState.status === "running";
+  const isTimerForTask = isTimerRunning && timerState.taskId === id;
+  const isTimerForOtherTask = isTimerRunning && timerState.taskId !== id;
+
+  const formatElapsed = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (value: number) => value.toString().padStart(2, "0");
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  };
 
   // ============================================================================
   // Form Reset Functions
@@ -548,6 +568,11 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
       setNewLogTags(defaultTaskTags);
     }
   }, [defaultTaskTags, newLogTags]);
+
+  useEffect(() => {
+    if (!isTimerForTask) return;
+    setTimerStepId(timerState.stepId ?? "");
+  }, [isTimerForTask, timerState.stepId]);
 
   // Esc key handler for task modal with unsaved change detection.
   // Compares current input values against snapshot taken at modal open.
@@ -899,6 +924,57 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
     await deleteWorkLog(logId);
     if (editingLogId === logId) {
       resetWorkLogEditForm();
+    }
+  };
+
+  // ============================================================================
+  // Handlers - Timer
+  // ============================================================================
+  const handleStartTimer = () => {
+    if (!task) return;
+    setTimerWarning(null);
+    const step = orderedSteps.find((candidate) => candidate.id === timerStepId);
+    const result = startTimer({
+      taskId: task.id,
+      taskTitle: task.title,
+      stepId: step?.id,
+      stepTitle: step?.title,
+    });
+    if (!result.ok) {
+      setTimerWarning(result.error);
+    }
+  };
+
+  const handleStopTimer = async () => {
+    setTimerWarning(null);
+    if (!isTimerRunning) {
+      setTimerWarning("Nessun timer attivo da fermare.");
+      return;
+    }
+    if (!task || !isTimerForTask) {
+      setTimerWarning("Il timer attivo è su un altro task.");
+      return;
+    }
+    setIsTimerSaving(true);
+    try {
+      const result = stopTimer();
+      if (!result) {
+        setTimerWarning("Nessun timer attivo da fermare.");
+        return;
+      }
+      await createWorkLog({
+        taskId: result.taskId,
+        stepId: result.stepId,
+        tags: task.tags ?? [],
+        type: "stop",
+        timestamp: result.stoppedAt,
+        durationMinutes: result.durationMinutes,
+      });
+    } catch (error) {
+      console.error(error);
+      setTimerWarning("Errore durante il salvataggio del timer.");
+    } finally {
+      setIsTimerSaving(false);
     }
   };
 
@@ -1314,6 +1390,68 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Timer</p>
+                <h3 className="text-lg font-semibold text-slate-900">Start/Stop</h3>
+              </div>
+              {isTimerForTask ? (
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {formatElapsed(elapsedSeconds)}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-4 grid gap-3">
+              <div>
+                <label className="text-sm font-medium text-slate-700">Step</label>
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={timerStepId}
+                  onChange={(event) => setTimerStepId(event.target.value)}
+                  disabled={isTimerRunning}
+                >
+                  <option value="">Nessun step</option>
+                  {orderedSteps.map((step) => (
+                    <option key={step.id} value={step.id}>
+                      #{step.order} - {step.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {isTimerForTask ? (
+                <p className="text-xs text-slate-500">
+                  In corso dalle {new Date(timerState.startedAt).toLocaleTimeString()}.
+                </p>
+              ) : null}
+              {isTimerForOtherTask ? (
+                <p className="text-xs text-amber-700">
+                  C'è già un timer attivo su un altro task. Fermalo prima di avviarne uno nuovo.
+                </p>
+              ) : null}
+              {timerWarning ? (
+                <p className="text-xs text-rose-600">{timerWarning}</p>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                  onClick={handleStartTimer}
+                  disabled={isTimerRunning || isTimerSaving}
+                >
+                  Avvia timer
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                  onClick={handleStopTimer}
+                  disabled={!isTimerForTask || isTimerSaving}
+                >
+                  {isTimerSaving ? "Salvataggio..." : "Stop timer"}
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-900">Work Log</h2>
             <button

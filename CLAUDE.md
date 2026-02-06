@@ -36,6 +36,7 @@ This document provides detailed technical information about ChronoStep's archite
 - Steps: nested steps with ordering, status updates, parent reassignment, and auto-complete when all children are done.
 - Today view: highlights tasks and steps due today (`src/app/today/page.tsx`).
 - Work logs: start/stop/note entries per task or step with tags, prefilled from task tags.
+- Timer: global Start/Stop timer persisted in localStorage with live elapsed display and WorkLog creation on stop.
 - Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
 - Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
@@ -45,6 +46,7 @@ This document provides detailed technical information about ChronoStep's archite
 ## Recent changes (last 2-3 months)
 - Insights: priority/tag drilldown in-page, driven by query params and toggleable by clicking the active chip.
 - Insights: the "Organizza priorità e scadenze" focus lists show only active tasks (exclude `done`).
+- Timer: Start/Stop timer in task detail with global indicator and live elapsed display (HH:MM:SS).
 - Security: upgraded Next.js to 16.1.6 and firebase-admin to 13.6.1 to resolve 3 high severity vulnerabilities.
 - Migration: updated dynamic route params handling for Next.js 16 (params are now Promises, use React's `use()` hook).
 
@@ -93,4 +95,4 @@ This document provides detailed technical information about ChronoStep's archite
 
 ## Suggested next additions (from docs)
 - Preset work logs / quick log actions.
-- Start-stop timer and calendar heatmap.
+- Calendar heatmap.

@@ -22,6 +22,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - `src/app/providers.tsx` wires React context providers.
 - `src/components/` contains shared UI (AuthGate, TopNav).
 - `src/hooks/` contains app state and auth hooks.
+- `src/hooks/useTimer.tsx` provides the global timer context and localStorage sync.
 - `src/lib/` contains domain types, Firebase client, and helpers.
 - `docs/feature-implementation-ideas.md` tracks future ideas.
 
@@ -72,6 +73,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Step status filters should reuse `TASK_STATUS_OPTIONS` and narrow to `StepStatus` as needed.
 - Step status filtering shows only matching steps/substeps; non-matching parents are not shown.
 - Task detail uses modals for add/edit flows (task, steps, work logs) with Esc-to-close warnings on unsaved text.
+- Timer Start/Stop lives in task detail; a global badge in `AuthGate` links back to the running task.
 - Copy is mixed Italian/English; keep tone consistent.
 - Insights "Organizza priorità e scadenze" lists use active tasks only (`status !== "done"`).
 - Insights drilldown (priority/tag) is driven by query params (`priority`, `tag`) and toggles off when clicking the active chip.
@@ -102,6 +104,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Prefer `useMemo` for heavy derived computations.
 - Prefer `useCallback` for handlers passed to children.
 - Use inline UI state for forms (no external state libs).
+- Timer state is global via `TimerProvider` and persisted in localStorage key `chronostep.timer.v1`.
 - Pre-fill Work Log tag inputs from task tags only when the field is empty.
 - Sorting is done in render layer (not in Firestore queries).
 - When reparenting steps, exclude self/descendants and recompute `order` for the new sibling group.
@@ -146,6 +149,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 - For large data sets, consider pagination or query filters.
 - `buildTaskActivity` sorts all logs on every render.
 - Avoid heavy computations outside `useMemo`.
+- Timer UI ticks every 1s; keep timer computations lightweight.
 
 ## Style and text
 - Current UI copy is a mix of Italian and English.
@@ -155,6 +159,7 @@ Keep changes aligned with existing patterns and keep output actionable.
 ## File references
 - Auth context: `src/hooks/useAuth.tsx`
 - Task store: `src/hooks/useTaskStore.ts`
+- Timer context: `src/hooks/useTimer.tsx`
 - Firebase init: `src/lib/firebaseClient.ts`
 - Domain types: `src/lib/types.ts`
 - Insights helpers: `src/lib/insights.ts`

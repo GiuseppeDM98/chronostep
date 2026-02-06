@@ -23,6 +23,7 @@ Built with modern web technologies and Firebase for authentication and data stor
 
 - **Hierarchical Task Organization** - Break down work into Tasks, Steps, and nested Substeps with clear ordering
 - **Work Logging** - Record notes, start/stop timers, and track duration with timestamped entries
+- **Live Timer** - Start/stop a live timer in task detail with HH:MM:SS display and automatic work log creation
 - **Timeline View** - See a chronological view of all your activity across tasks with filtering by month/year and tags
 - **Today View** - Focus on tasks and steps due today to stay on track
 - **Insights Dashboard** - Visualize upcoming deadlines and recent activity for active tasks, plus priority distribution, tag summaries, an interactive calendar, and click-through drilldowns by priority or tag
@@ -180,7 +181,7 @@ See [CLAUDE.md](./CLAUDE.md) for detailed technical limitations and risks.
 Future enhancements under consideration:
 
 - Drag-and-drop step ordering
-- Pomodoro/focus mode with timer
+- Pomodoro/focus mode
 - Advanced analytics (daily productivity, time per task)
 - Data export to CSV/Markdown
 - Calendar sync integrations
