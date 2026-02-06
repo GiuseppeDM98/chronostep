@@ -21,7 +21,7 @@ import { use, useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "../../../components/AuthGate";
 import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 import { useTaskStore } from "../../../hooks/useTaskStore";
-import { useTimer } from "../../../hooks/useTimer";
+import { useTimer, type TimerState } from "../../../hooks/useTimer";
 
 type StepNode = Step & { children: StepNode[] };
 
@@ -42,6 +42,9 @@ const STEP_STATUS_OPTIONS: StepStatus[] = TASK_STATUS_OPTIONS.filter(
   (status): status is StepStatus => status !== "blocked",
 );
 const TASK_PRIORITY_OPTIONS: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
+const isRunningTimerState = (
+  state: TimerState,
+): state is Extract<TimerState, { status: "running" }> => state.status === "running";
 
 // Build a stable step tree per task, keeping sibling order deterministic.
 const buildStepTree = (taskSteps: Step[]) => {
@@ -404,6 +407,7 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
   const isTimerRunning = timerState.status === "running";
   const isTimerForTask = isTimerRunning && timerState.taskId === id;
   const isTimerForOtherTask = isTimerRunning && timerState.taskId !== id;
+  const timerStepIdFromState = isRunningTimerState(timerState) ? timerState.stepId ?? "" : "";
 
   const formatElapsed = (totalSeconds: number) => {
     const hours = Math.floor(totalSeconds / 3600);
@@ -571,8 +575,8 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
 
   useEffect(() => {
     if (!isTimerForTask) return;
-    setTimerStepId(timerState.stepId ?? "");
-  }, [isTimerForTask, timerState.stepId]);
+    setTimerStepId(timerStepIdFromState);
+  }, [isTimerForTask, timerStepIdFromState]);
 
   // Esc key handler for task modal with unsaved change detection.
   // Compares current input values against snapshot taken at modal open.
@@ -941,7 +945,11 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
       stepTitle: step?.title,
     });
     if (!result.ok) {
-      setTimerWarning(result.error);
+      const message =
+        "error" in result && typeof result.error === "string"
+          ? result.error
+          : "Errore durante l'avvio del timer.";
+      setTimerWarning(message);
     }
   };
 

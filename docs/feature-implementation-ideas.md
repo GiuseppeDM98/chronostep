@@ -80,6 +80,9 @@ Velocizzare la creazione dei worklog con preset riutilizzabili (task + nota + du
 
 ## 5) Timer Start–Stop
 
+**Stato**
+Completato.
+
 **Scopo**
 Ridurre gli errori di memoria tracciando il tempo in modo live e creando un worklog a fine sessione.
 
@@ -95,6 +98,9 @@ Ridurre gli errori di memoria tracciando il tempo in modo live e creando un work
 ---
 
 ## 6) Calendar heatmap
+
+**Stato**
+Completato.
 
 **Scopo**
 Fornire un colpo d'occhio sui giorni piu intensi.

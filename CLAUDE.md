@@ -39,16 +39,12 @@ This document provides detailed technical information about ChronoStep's archite
 - Timer: global Start/Stop timer persisted in localStorage with live elapsed display and WorkLog creation on stop.
 - Timeline: chronological work log view with month/year + tag filters (`src/app/timeline/page.tsx`).
 - Report: monthly summary by task with totals, note highlights, and tag rollups (`src/app/report/page.tsx`).
-- Insights: upcoming due dates, recent activity, priority/tag summaries, calendar (`src/app/insights/page.tsx`).
+- Insights: upcoming due dates, recent activity, priority/tag summaries, and calendar heatmap (`src/app/insights/page.tsx`).
 - Shared UI: top navigation and auth gate (`src/components`).
 - Shared UI: demo account credentials are displayed on the login screen for trials.
 
 ## Recent changes (last 2-3 months)
-- Insights: priority/tag drilldown in-page, driven by query params and toggleable by clicking the active chip.
-- Insights: the "Organizza priorità e scadenze" focus lists show only active tasks (exclude `done`).
-- Timer: Start/Stop timer in task detail with global indicator and live elapsed display (HH:MM:SS).
-- Security: upgraded Next.js to 16.1.6 and firebase-admin to 13.6.1 to resolve 3 high severity vulnerabilities.
-- Migration: updated dynamic route params handling for Next.js 16 (params are now Promises, use React's `use()` hook).
+- Insights: calendar heatmap showing daily work log minutes for the selected month.
 
 ## Data model summary
 - Task: status, priority, tags, dueDate, timestamps, userId.
@@ -95,4 +91,3 @@ This document provides detailed technical information about ChronoStep's archite
 
 ## Suggested next additions (from docs)
 - Preset work logs / quick log actions.
-- Calendar heatmap.

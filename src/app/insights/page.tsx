@@ -19,6 +19,7 @@ import { useTaskStore } from "../../hooks/useTaskStore";
 import {
   buildStepsByTask,
   buildTaskActivity,
+  buildDailyWorkLogTotals,
   describePriority,
   getTaskStepSummary,
 } from "../../lib/insights";
@@ -49,6 +50,23 @@ const daysBetween = (target: Date, from: Date) =>
 
 const monthLabel = (year: number, month: number) =>
   new Date(year, month).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+const getHeatmapStyles = (minutes: number, maxMinutes: number) => {
+  if (minutes <= 0 || maxMinutes <= 0) {
+    return { bgClass: "bg-white", textClass: "text-slate-400" };
+  }
+  const ratio = minutes / maxMinutes;
+  if (ratio <= 0.25) {
+    return { bgClass: "bg-emerald-50", textClass: "text-emerald-700" };
+  }
+  if (ratio <= 0.5) {
+    return { bgClass: "bg-emerald-100", textClass: "text-emerald-800" };
+  }
+  if (ratio <= 0.75) {
+    return { bgClass: "bg-emerald-200", textClass: "text-emerald-900" };
+  }
+  return { bgClass: "bg-emerald-300", textClass: "text-emerald-950" };
+};
 
 type FocusState =
   | { type: "tag"; value: string }
@@ -143,7 +161,10 @@ const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
 const InsightsPageContent = () => {
   const { tasks, steps, workLogs, isHydrated } = useTaskStore();
   const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);
-  const { taskActivity } = useMemo(() => buildTaskActivity(workLogs), [workLogs]);
+  const { taskActivity, logDurations } = useMemo(
+    () => buildTaskActivity(workLogs),
+    [workLogs],
+  );
   const today = useMemo(() => new Date(), []);
   const [calendarState, setCalendarState] = useState({
     year: today.getFullYear(),
@@ -314,6 +335,24 @@ const InsightsPageContent = () => {
     () => buildCalendarDays(calendarYear, calendarMonth, tasks),
     [calendarMonth, calendarYear, tasks],
   );
+  const dailyMinutesByDate = useMemo(
+    () => buildDailyWorkLogTotals(workLogs, logDurations),
+    [logDurations, workLogs],
+  );
+  const monthlyMinutesByDate = useMemo(() => {
+    const monthKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}`;
+    const filtered = new Map<string, number>();
+    dailyMinutesByDate.forEach((minutes, dateKey) => {
+      if (dateKey.startsWith(monthKey)) {
+        filtered.set(dateKey, minutes);
+      }
+    });
+    return filtered;
+  }, [calendarMonth, calendarYear, dailyMinutesByDate]);
+  const maxMonthlyMinutes = useMemo(() => {
+    const values = Array.from(monthlyMinutesByDate.values());
+    return values.length > 0 ? Math.max(...values) : 0;
+  }, [monthlyMinutesByDate]);
   useEffect(() => {
     if (selectedDayKey && calendarDays.some((day) => day.key === selectedDayKey)) {
       return;
@@ -723,6 +762,10 @@ const InsightsPageContent = () => {
               {calendarDays.map((calendarDay) => {
                 const isSelected = calendarDay.key === selectedDayKey;
                 const isInteractive = calendarDay.isCurrentMonth;
+                const dayMinutes = calendarDay.isCurrentMonth
+                  ? monthlyMinutesByDate.get(calendarDay.key) ?? 0
+                  : 0;
+                const heatmapStyles = getHeatmapStyles(dayMinutes, maxMonthlyMinutes);
                 return (
                   <div
                     key={calendarDay.key}
@@ -745,12 +788,17 @@ const InsightsPageContent = () => {
                     } ${
                       calendarDay.isCurrentMonth
                         ? isSelected
-                          ? "border-slate-900 bg-slate-900/5"
-                          : "border-slate-200 bg-white"
+                          ? `border-slate-900 ${heatmapStyles.bgClass} ring-2 ring-slate-900 ring-offset-1`
+                          : `border-slate-200 ${heatmapStyles.bgClass}`
                         : "border-dashed border-slate-100 text-slate-300"
                     }`}
                   >
                     <p className="text-xs font-semibold">{calendarDay.label}</p>
+                    {calendarDay.isCurrentMonth && dayMinutes > 0 ? (
+                      <p className={`text-[10px] font-semibold ${heatmapStyles.textClass}`}>
+                        {dayMinutes} min
+                      </p>
+                    ) : null}
                     <div className="mt-1 space-y-1">
                       {calendarDay.tasks.slice(0, 2).map((task) => (
                         <p key={task.id} className="truncate text-xs text-slate-600">
@@ -766,6 +814,27 @@ const InsightsPageContent = () => {
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span className="font-semibold text-slate-600">Meno</span>
+              <div className="flex items-center gap-1">
+                {[
+                  "bg-white",
+                  "bg-emerald-50",
+                  "bg-emerald-100",
+                  "bg-emerald-200",
+                  "bg-emerald-300",
+                ].map((bgClass) => (
+                  <span
+                    key={bgClass}
+                    className={`h-3 w-3 rounded border border-slate-200 ${bgClass}`}
+                  />
+                ))}
+              </div>
+              <span className="font-semibold text-slate-600">Più</span>
+              <span className="text-slate-400">
+                Max giornaliero: {maxMonthlyMinutes} min
+              </span>
             </div>
             <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
               {selectedDayInfo && selectedDayInfo.isCurrentMonth ? (
@@ -783,6 +852,9 @@ const InsightsPageContent = () => {
                       {selectedDayInfo.tasks.length} task
                     </span>
                   </div>
+                  <p className="mt-2 text-xs font-semibold text-slate-600">
+                    Totale worklog: {monthlyMinutesByDate.get(selectedDayInfo.key) ?? 0} min
+                  </p>
                   {selectedDayInfo.tasks.length === 0 ? (
                     <p className="mt-3 text-sm text-slate-500">
                       Nessuna due date in questo giorno. Seleziona un altro giorno del mese.

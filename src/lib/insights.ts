@@ -217,6 +217,30 @@ export const buildMonthlyReportSummary = (
 };
 
 /**
+ * Aggregate total minutes per UTC calendar day from work logs.
+ *
+ * @param workLogs - Array of work logs to analyze
+ * @param logDurations - Map of logId to computed duration in minutes
+ * @returns Map of UTC date key (YYYY-MM-DD) to total minutes
+ *
+ * Why UTC keys: keeps daily buckets stable across timezones and consistent
+ * with the Timeline grouping logic and calendar date keys.
+ */
+export const buildDailyWorkLogTotals = (
+  workLogs: WorkLog[],
+  logDurations: Map<string, number>,
+) => {
+  const totals = new Map<string, number>();
+  workLogs.forEach((log) => {
+    const minutes = logDurations.get(log.id);
+    if (!minutes) return;
+    const dateKey = new Date(log.timestamp).toISOString().slice(0, 10);
+    totals.set(dateKey, (totals.get(dateKey) ?? 0) + minutes);
+  });
+  return totals;
+};
+
+/**
  * Safely retrieve step summary for a task, with fallback.
  *
  * @param map - Step summary map from buildStepsByTask

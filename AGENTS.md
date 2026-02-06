@@ -77,11 +77,13 @@ Keep changes aligned with existing patterns and keep output actionable.
 - Copy is mixed Italian/English; keep tone consistent.
 - Insights "Organizza priorità e scadenze" lists use active tasks only (`status !== "done"`).
 - Insights drilldown (priority/tag) is driven by query params (`priority`, `tag`) and toggles off when clicking the active chip.
+- Insights calendar heatmap uses UTC date keys (`YYYY-MM-DD`) and a max-of-month color scale.
 
 ## Key helpers
 - `src/lib/insights.ts` holds derived metrics and summaries.
 - `buildStepsByTask` returns step totals by task.
 - `buildTaskActivity` computes durations and last log per task.
+- `buildDailyWorkLogTotals` aggregates work log minutes by UTC day.
 - `buildMonthlyReportSummary` aggregates per-task totals and highlights for reports.
 - `groupWorkLogsByTag` groups logs by tag for filters.
 - `buildTaskTagSummary` summarizes top tags per task for chips.
