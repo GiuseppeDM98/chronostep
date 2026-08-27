@@ -186,9 +186,13 @@ const InsightsPageContent = () => {
   const focusResult = useMemo(() => {
     if (!focus) return null;
 
+    // The drilldown must list exactly what its bar counted, or the number and the list contradict
+    // each other. "Carico per priorità" is built from ACTIVE tasks, so the priority drilldown is
+    // too; "Dove è andato il tempo" is built from every work log, done tasks included, so the tag
+    // drilldown keeps them.
     const matchedTasks: Task[] =
       focus.kind === "priority"
-        ? tasks.filter((task) => (task.priority ?? "none") === focus.value)
+        ? activeTasks.filter((task) => (task.priority ?? "none") === focus.value)
         : tasks.filter((task) => task.tags?.includes(focus.value));
     const taskIds = new Set(matchedTasks.map((task) => task.id));
 
@@ -207,7 +211,7 @@ const InsightsPageContent = () => {
     const label = focus.kind === "tag" ? `#${focus.value}` : PRIORITY_LABELS[focus.value];
 
     return { matchedTasks, matchedSteps, matchedLogs, minutes, label };
-  }, [focus, logDurations, steps, tasks, workLogs]);
+  }, [activeTasks, focus, logDurations, steps, tasks, workLogs]);
 
   const taskTitles = useMemo(() => new Map(tasks.map((task) => [task.id, task.title])), [tasks]);
 

@@ -133,6 +133,15 @@ Each of these cost an hour to diagnose and gives no useful error.
 - **`npm run test:rules` uses `firebase.test.json`** on port 8181, deliberately apart from the
   development emulators on 8080/9099, so both run at once. Sharing the port fails with "port taken".
 
+## Release notes
+
+`Draft Release Temp.md` accumulates the user-visible changes since the last published release. At
+the end of a session, append there; when a release is cut the file is pasted into the GitHub release
+body and started fresh.
+
+Only what a user can see belongs in it. A fix to something not yet released is not a bug fix — fold
+it into the feature's own bullet, because nobody can have hit a bug in a version they never had.
+
 ## Quick triage checklist
 - Is the user authenticated, and is `isHydrated` true?
 - Is `loadError` set? An empty screen and a failed read look identical without it.
