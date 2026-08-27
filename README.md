@@ -1,6 +1,6 @@
 # ChronoStep
 
-**Un diario operativo: task, step annidati e il tempo che ci hai messo davvero.**
+**An operational diary: tasks, nested steps, and the time you actually spent.**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.3-black)](https://nextjs.org/)
@@ -11,108 +11,128 @@
 
 ---
 
-## L'idea
+## The idea
 
-Un cruscotto normale ti consegna un muro di riquadri con dei numeri dentro e lascia a te
-l'interpretazione. ChronoStep no: **ogni schermata apre con una conclusione** — una frase che dice
-come stai messo — e la sostiene con un paragrafo in cui i numeri stanno **dentro** la frase.
+A normal dashboard hands you a wall of tiles with numbers in them and leaves the interpretation to
+you. ChronoStep does not: **every screen opens with a conclusion** — a sentence that says where you
+stand — and backs it with a paragraph in which the figures sit **inside** the sentence.
 
 > Oggi scadono 4 cose**.**
 > Oggi scadono `2 task` e `2 step`. Oggi hai registrato `1h 12m`, sotto la tua media di `1h 32m`.
 
-Il punto finale prende il colore del giudizio: verde se le cose vanno, ambra se vogliono
-attenzione, rosso se sei indietro. Un numero che compare nel paragrafo non viene disegnato anche
-come riquadro da qualche altra parte.
+The full stop takes the colour of the judgement: green if things are on track, amber if they want
+attention, red if you are behind. A figure that appears in the paragraph is never also drawn as a
+tile somewhere else.
 
-I verdetti sono calcolati da regole sui dati, non scritti a mano, e **devono poter dare cattive
-notizie**: se hai un timer acceso ma tre cose scadute, il titolo parla delle tre cose scadute. Dove
-i dati non bastano per un giudizio, la pagina lo dice invece di inventarne uno.
-
----
-
-## Cosa fa
-
-- **Task → Step annidati → Work log.** Un task può restare una riga sola («mandare la mail a
-  Bianchi») o diventare un progetto con otto step su tre livelli. Le due cose vivono nella stessa
-  lista senza che quella vuota sembri rotta.
-- **Il tempo si attacca allo step, non solo al task.** Il consuntivo non dice soltanto «19h su
-  questo lavoro», ma su quale pezzo di lavoro sono andate.
-- **Timer globale.** Parte da una riga dell'albero e si ferma da qualunque pagina, perché la barra
-  della sessione in corso è sempre a schermo — anche dopo aver cancellato il task su cui girava.
-
-![Sessione in corso](docs/screenshots/sessione-in-corso.png)
-
-  Con una sessione aperta il verdetto cambia da solo: *"Sei già in pista."*
-- **Timeline, Report, Insights.** Registro cronologico, consuntivo per task, e una mappa di calore
-  del mese che concorda con i totali mensili — perché usano gli stessi bucket. Cliccando una priorità
-  o un tag si apre il dettaglio di cosa c'è sotto, e la vista filtrata è linkabile.
-- **Chiaro e scuro**, con interruttore a tre stati (chiaro, scuro, segui il sistema).
+Verdicts are computed by rules over the data, not written by hand, and they **must be able to
+deliver bad news**: if you have a timer running but three things overdue, the headline is about the
+three overdue things. Where the data is too thin for a judgement, the page says so instead of
+inventing one.
 
 ---
 
-## Come si presenta
+## What it does
+
+- **Task → nested steps → work log.** A task can stay a single line («mandare la mail a Bianchi» —
+  email Bianchi) or become a project with eight steps across three levels. Both live in the same
+  list without the empty one looking broken.
+- **Time attaches to the step, not just to the task.** The summary does not only say "19h on this
+  job", it says which piece of the job those hours went into.
+- **A global timer.** It starts from a row of the tree and stops from any page, because the
+  running-session bar is always on screen — even after you delete the task it was running on.
+
+![Running session](docs/screenshots/sessione-in-corso.png)
+
+  With a session open the verdict changes on its own: *"Sei già in pista."* ("you are already
+  moving").
+- **Timeline, Report, Insights.** A chronological log, a per-task summary, and a heatmap of the
+  month that agrees with the monthly totals — because they use the same buckets. Clicking a priority
+  or a tag opens the detail of what sits underneath, and the filtered view can be linked to.
+- **Cattura (capture from notes).** You paste your notes exactly as they are and a proposal comes
+  out: tasks with their fields, nested steps, steps to attach to a task that already exists,
+  work-log entries. The proposal is corrected row by row and does not touch the archive until you
+  confirm it. It needs a Claude API key; without one the screen says so and the rest of the app is
+  unchanged.
+- **Light and dark**, with a three-state toggle (light, dark, follow the system).
+
+---
+
+## What it looks like
 
 | | |
 |---|---|
-| ![Dettaglio task](docs/screenshots/dettaglio-task.png) | ![Insights](docs/screenshots/insights.png) |
-| **Dettaglio task** — l'albero degli step è piatto con una colonna di numerazione (1, 2, 2.1): a tre livelli l'annidamento vero spende quasi tutta la larghezza in rientri. | **Insights** — la quantità è disegnata come lunghezza di un filetto in inchiostro, non come riempimento colorato: il verde resta riservato al giudizio. |
-| ![Oggi, tema scuro](docs/screenshots/oggi-scuro.png) | ![Oggi su telefono](docs/screenshots/oggi-mobile.png) |
-| **Tema scuro** — l'identità non sta nel nero: sta nell'anatomia del verdetto e nella coppia serif/monospace. Il tema è solo uno scambio di token OKLCH. | **Telefono** — desktop-first, ma le righe si impilano e la navigazione scorre invece di spezzarsi. |
+| ![Task detail](docs/screenshots/dettaglio-task.png) | ![Insights](docs/screenshots/insights.png) |
+| **Task detail** — the step tree is flat with a numbering column (1, 2, 2.1): at three levels real nesting spends almost all the width on indents. | **Insights** — quantity is drawn as the length of an ink bar, not as a coloured fill: green stays reserved for judgement. |
+| ![Oggi, dark theme](docs/screenshots/oggi-scuro.png) | ![Oggi on a phone](docs/screenshots/oggi-mobile.png) |
+| **Dark theme** — the identity is not in the black: it is in the anatomy of the verdict and in the serif/monospace pair. The theme is only a swap of OKLCH tokens. | **Phone** — desktop-first, but rows stack and the navigation scrolls instead of breaking. |
 
 ---
 
-## Avvio rapido
+## Try it
 
-Servono Node.js 20+ e un progetto Firebase ([piano gratuito](https://firebase.google.com/pricing)).
+The sign-in screen carries a demo account. It is **read-only** — it opens every screen and changes
+nothing, because its credentials are public and what one visitor sees should be what the next one
+sees — and it holds a real diary: eleven tasks, steps nested three levels deep, six months of work
+log. The home screen opens on something overdue, which is the point.
+
+---
+
+## Quick start
+
+You need Node.js 20+ and a Firebase project ([free plan](https://firebase.google.com/pricing)).
 
 ```bash
 git clone https://github.com/GiuseppeDM98/chronostep.git
 cd chronostep
 npm install
-cp .env.example .env      # poi riempi le quattro variabili NEXT_PUBLIC_FIREBASE_*
+cp .env.example .env      # then fill in the four NEXT_PUBLIC_FIREBASE_* variables
 npm run dev
 ```
 
-Le istruzioni complete stanno in [SETUP.md](./SETUP.md).
+The full instructions are in [SETUP.md](./SETUP.md).
 
-### Sviluppo contro gli emulatori
+### Developing against the emulators
 
-Per lavorare senza toccare dati veri — e per vedere le schermate piene invece che vuote:
+To work without touching real data — and to see the screens full instead of empty:
 
 ```bash
-npm run emulators          # Auth + Firestore in locale
-npm run seed               # crea un account e dei dati d'esempio
+npm run emulators          # Auth + Firestore, locally
+npm run seed               # creates an account and some sample data
 NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true npm run dev
 ```
 
-Il seed stampa le credenziali. I dati sono generati **relativi a oggi**, quindi la mappa di calore
-copre sempre il mese visibile e il confronto fra mesi ha sempre un mese precedente.
+The seed prints the credentials. The data is generated **relative to today**, so the heatmap always
+covers the visible month and the month-over-month comparison always has a previous month.
 
 ---
 
-## Verifiche
+## Checks
 
-Non c'è un livello server: le regole Firestore sono l'**unico** confine fra i dati di due account,
-e le date sono la sorgente storica di più bug di questo progetto. Entrambe hanno una suite.
+No data ever passes through a server: the Firestore rules are the **only** boundary between two
+accounts' data, and dates have historically been this project's richest source of bugs. Both have a
+suite. The one server route in the project talks to the Claude API and to nothing else — it holds no
+Firebase credentials and cannot write, which is why adding it did not move that boundary.
 
 ```bash
-npm test              # tutto
-npm run test:rules    # 32 verifiche sulle regole, nell'emulatore
-npm run test:dates    # 15 verifiche × 4 fusi orari
-npm run test:insights # aggregazione: pairing start/stop, bucket, totali
-npm run test:verdicts # il motore dei verdetti, compreso che sappia dare cattive notizie
+npm test              # everything
+npm run test:rules    # 47 checks on the rules, in the emulator
+npm run test:dates    # 15 checks × 4 timezones
+npm run test:insights # aggregation: start/stop pairing, buckets, totals
+npm run test:verdicts # the verdict engine, including that it can deliver bad news
+npm run test:capture  # what gets rejected out of what the AI answers, and how the outline resolves
 ```
 
-`test:rules` prova gli attacchi (un secondo account che tenta di leggere, dirottare o cancellare i
-dati del primo) **e** i flussi reali dell'app, perché un giro di vite sulle regole può rompere la
-cancellazione a cascata senza rompere nient'altro.
+`test:rules` tries the attacks (a second account attempting to read, hijack or delete the first
+one's data) **and** the app's real flows, because tightening the rules can break the cascade delete
+without breaking anything else. It also proves the demo account is read-only, in pairs: every check
+is the same write, refused for the demo account and accepted for a normal one.
 
-`test:dates` rigira le stesse asserzioni da quattro fusi orari: un bug di date è invisibile da
+`test:dates` replays the same assertions from four timezones: a date bug is invisible from
 Greenwich.
 
 ---
 
-## Modello dati
+## Data model
 
 ```typescript
 interface Task {
@@ -123,7 +143,7 @@ interface Task {
   status: "todo" | "in_progress" | "done" | "blocked";
   priority?: "low" | "medium" | "high";
   tags?: string[];
-  dueDate?: string;      // "2026-08-27" — un giorno di calendario, non un istante
+  dueDate?: string;      // "2026-08-27" — a calendar day, not an instant
   createdAt: string;     // ISO 8601
   updatedAt: string;
 }
@@ -132,11 +152,11 @@ interface Step {
   id: string;
   userId: string;
   taskId: string;
-  parentStepId?: string; // annidamento
+  parentStepId?: string; // nesting
   title: string;
   description?: string;
   status: "todo" | "in_progress" | "done";
-  order: number;         // relativo ai FRATELLI, non globale
+  order: number;         // relative to SIBLINGS, not global
   dueDate?: string;
   createdAt: string;
   updatedAt: string;
@@ -150,84 +170,93 @@ interface WorkLog {
   message?: string;
   tags: string[];
   type: "start" | "stop" | "note";
-  timestamp: string;         // ISO 8601: un istante
+  timestamp: string;         // ISO 8601: an instant
   durationMinutes?: number;
 }
 ```
 
-**Due tipi di data, trattati diversamente.** Una scadenza è un giorno sul calendario e si salva come
-`"2026-08-27"`: non può slittare. Un timestamp è un istante, e la giornata sotto cui finisce è
-quella **locale** di chi guarda. Vedi `src/lib/dates.ts`.
+**Two kinds of date, handled differently.** A due date is a day on the calendar and is stored as
+`"2026-08-27"`: it cannot drift. A timestamp is an instant, and the day it is filed under is the
+**local** day of whoever is looking. See `src/lib/dates.ts`.
 
 ---
 
-## Struttura
+## Structure
 
 ```
 chronostep/
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx            # Oggi — la home
-│   │   ├── tasks/              # lista e dettaglio
+│   │   ├── page.tsx            # Oggi — the home route
+│   │   ├── tasks/              # list and detail
+│   │   ├── capture/            # Cattura — notes in, a proposal out
+│   │   ├── api/ai/capture/     # the only server route: a proxy for the Claude API
 │   │   ├── timeline/ report/ insights/
-│   │   ├── layout.tsx          # font, tema, contratto di direzione
-│   │   └── globals.css         # token OKLCH, chiaro e scuro
+│   │   ├── layout.tsx          # fonts, theme, the direction contract
+│   │   └── globals.css         # OKLCH tokens, light and dark
 │   ├── components/
-│   │   ├── AppShell.tsx        # navigazione + sessione in corso
-│   │   ├── Verdict.tsx         # il blocco verdetto
-│   │   ├── Dialog.tsx          # dialogo con trappola del focus
-│   │   └── controls.tsx        # campi etichettati, bottoni con stato
-│   ├── hooks/                  # auth, store, timer, tema, orologio
+│   │   ├── AppShell.tsx        # navigation + the running session
+│   │   ├── Verdict.tsx         # the verdict block
+│   │   ├── Dialog.tsx          # dialog with a focus trap
+│   │   ├── controls.tsx        # labelled fields, buttons with state
+│   │   └── CaptureReview.tsx   # the proposal, before it becomes data
+│   ├── hooks/                  # auth, store, timer, theme, clock, AI access
 │   └── lib/
-│       ├── verdicts.ts         # il motore dei verdetti
-│       ├── dates.ts            # le due specie di data
-│       ├── insights.ts         # aggregazione e pairing delle sessioni
+│       ├── verdicts.ts         # the verdict engine
+│       ├── dates.ts            # the two species of date
+│       ├── insights.ts         # aggregation and session pairing
+│       ├── aiCapture.ts        # plan shape, normalisation, outline
+│       ├── aiPrompt.ts         # JSON schema and system prompt
+│       ├── demoAccount.ts     # the read-only demo account
 │       └── types.ts
-├── tests/                      # regole, date, aggregazione, verdetti
-├── scripts/                    # seed emulatori, catture
+├── tests/                      # rules, dates, aggregation, verdicts, capture
+├── scripts/                    # emulator seed, screenshots
 ├── firestore.rules
-├── PRODUCT.md                  # verità di prodotto
-└── DESIGN.md                   # il sistema visivo
+├── PRODUCT.md                  # product truth
+└── DESIGN.md                   # the visual system
 ```
 
 ---
 
 ## Stack
 
-Next.js 16 (App Router, tutte le pagine client) · React 18 · TypeScript · Tailwind 3 con token
-OKLCH · Firebase Auth + Firestore, solo SDK client. Nessun server, nessuna API route.
+Next.js 16 (App Router, every page a client component) · React 18 · TypeScript · Tailwind 3 with
+OKLCH tokens · Firebase Auth + Firestore, client SDK only. Data never passes through a server: the
+project's only server route, `/api/ai/capture`, talks to the Claude API and to nothing else.
 
-Tipografia: **Literata** per la voce umana (verdetti, prose, note) e **JetBrains Mono** per lo
-strumento (durate, conteggi, date, stati, etichette dei controlli). L'alternanza fra le due è
-l'identità: togli tutto il contenuto e il prodotto si riconosce ancora.
-
----
-
-## Limiti noti
-
-- `useTaskStore` legge tutti i documenti dell'utente a ogni aggiornamento: su volumi grandi va
-  paginato.
-- Niente sincronizzazione realtime: si legge a richiesta e si rilegge dopo ogni scrittura.
-- La cancellazione a cascata non è transazionale. È divisa in blocchi per non superare il limite di
-  500 operazioni di Firestore, ma un errore a metà lascia uno stato parziale.
-- Il blocco delle registrazioni via `NEXT_PUBLIC_DISABLE_SIGNUPS` è un filtro dell'interfaccia, non
-  un controllo: per chiuderle davvero si configura Firebase Auth.
-- L'account demo mostrato nella schermata di accesso è condiviso con chiunque abbia il link.
+Typography: **Literata** for the human voice (verdicts, prose, notes) and **JetBrains Mono** for the
+instrument (durations, counts, dates, statuses, control labels). The alternation between the two is
+the identity: strip out all the content and the product is still recognisable.
 
 ---
 
-## Documentazione
+## Known limits
 
-- [SETUP.md](./SETUP.md) — configurazione Firebase passo passo
-- [PRODUCT.md](./PRODUCT.md) — utenti, scopo, vincoli, principi
-- [DESIGN.md](./DESIGN.md) — token, tipografia, componenti, anti-pattern
-- [AGENTS.md](./AGENTS.md) · [CLAUDE.md](./CLAUDE.md) — riferimento tecnico
+- `useTaskStore` reads every document for the user on each refresh: at large volumes it needs
+  pagination.
+- No realtime sync: reads happen on demand and are repeated after every write.
+- The cascade delete is not transactional. It is chunked so as not to exceed Firestore's limit of
+  500 operations, but a failure midway leaves a partial state.
+- Closing registrations with `NEXT_PUBLIC_DISABLE_SIGNUPS` is an interface filter, not a control: to
+  close them for real, configure Firebase Auth.
+- The demo account shown on the sign-in screen is shared with anyone who has the link, and is
+  read-only for that reason: it can open every screen and change nothing. Enforced in
+  `firestore.rules`, not in the interface.
+
+---
+
+## Documentation
+
+- [SETUP.md](./SETUP.md) — step-by-step Firebase configuration
+- [PRODUCT.md](./PRODUCT.md) — users, purpose, constraints, principles
+- [DESIGN.md](./DESIGN.md) — tokens, typography, components, anti-patterns
+- [AGENTS.md](./AGENTS.md) · [CLAUDE.md](./CLAUDE.md) — technical reference
 - [LICENSE.md](./LICENSE.md) — AGPL-3.0
 
 ---
 
-## Licenza
+## License
 
-**GNU Affero General Public License v3.0.** Puoi usarlo, modificarlo e distribuirlo; se lo modifichi
-e lo pubblichi come servizio web devi renderne disponibile il sorgente, e ogni opera derivata resta
-sotto AGPL-3.0. Testo completo in [LICENSE.md](./LICENSE.md).
+**GNU Affero General Public License v3.0.** You may use it, modify it and distribute it; if you
+modify it and publish it as a web service you must make the source available, and every derivative
+work stays under AGPL-3.0. Full text in [LICENSE.md](./LICENSE.md).

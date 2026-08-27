@@ -19,6 +19,25 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // The public demo account is READ-ONLY, and this is the only place that can make it so.
+    //
+    // Its credentials are printed on the sign-in screen, so "the demo account" means "everyone who
+    // has the link". The app hides its write controls, but the app is JavaScript served to that same
+    // everyone: a hidden button is a suggestion. This rule is the fact.
+    //
+    // Matched on the email claim rather than a uid so the rule reads as what it means and survives
+    // the account being recreated. WARNING: this address is also in NEXT_PUBLIC_DEMO_EMAIL, which is
+    // what the interface reads to put itself in read-only mode. Change one and change the other, or
+    // the app will offer actions this rule then refuses.
+    function isDemoAccount() {
+      return signedIn() && request.auth.token.get('email', '').lower() == 'admin@example.com';
+    }
+
+    /** Every write verb goes through here. Reads deliberately do not. */
+    function mayWrite() {
+      return signedIn() && !isDemoAccount();
+    }
+
     // True when `data` belongs to the caller. Used on both sides of a write.
     function ownsResource(data) {
       return data != null && signedIn() && data.userId == request.auth.uid;
@@ -111,32 +130,42 @@ service cloud.firestore {
     }
 
     match /tasks/{taskId} {
-      allow read, delete: if ownsResource(resource.data);
-      allow create: if ownsResource(request.resource.data) && validNewTask(request.resource.data);
-      allow update: if ownsResource(resource.data) &&
+      allow read: if ownsResource(resource.data);
+      allow delete: if mayWrite() && ownsResource(resource.data);
+      allow create: if mayWrite() &&
+                       ownsResource(request.resource.data) &&
+                       validNewTask(request.resource.data);
+      allow update: if mayWrite() &&
+                       ownsResource(resource.data) &&
                        ownsResource(request.resource.data) &&
                        keepsOwner();
     }
 
     match /steps/{stepId} {
-      allow read, delete: if stepAccessible(resource.data);
+      allow read: if stepAccessible(resource.data);
+      allow delete: if mayWrite() && stepAccessible(resource.data);
       // A new step must be owned by the caller AND hang off a task the caller owns, so a step can
       // never be injected into someone else's task.
-      allow create: if ownsResource(request.resource.data) &&
+      allow create: if mayWrite() &&
+                       ownsResource(request.resource.data) &&
                        taskOwned(request.resource.data.taskId) &&
                        validNewStep(request.resource.data);
-      allow update: if stepAccessible(resource.data) &&
+      allow update: if mayWrite() &&
+                       stepAccessible(resource.data) &&
                        ownsResource(request.resource.data) &&
                        keepsOwner() &&
                        request.resource.data.taskId == resource.data.taskId;
     }
 
     match /workLogs/{logId} {
-      allow read, delete: if workLogAccessible(resource.data);
-      allow create: if ownsResource(request.resource.data) &&
+      allow read: if workLogAccessible(resource.data);
+      allow delete: if mayWrite() && workLogAccessible(resource.data);
+      allow create: if mayWrite() &&
+                       ownsResource(request.resource.data) &&
                        taskOwned(request.resource.data.taskId) &&
                        validNewWorkLog(request.resource.data);
-      allow update: if workLogAccessible(resource.data) &&
+      allow update: if mayWrite() &&
+                       workLogAccessible(resource.data) &&
                        ownsResource(request.resource.data) &&
                        keepsOwner() &&
                        request.resource.data.taskId == resource.data.taskId;

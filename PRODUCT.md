@@ -8,96 +8,111 @@ web
 
 ## Users
 
-**Giuseppe, operatore singolo.** ChronoStep è il suo diario operativo personale: un solo account reale,
-i suoi dati, nessuna collaborazione. Lo apre **qualche volta al giorno** — la mattina, dopo pranzo, a
-fine giornata — da desktop. Ogni apertura è un ri-orientamento: la domanda che si porta dietro è
-"cosa faccio adesso?", non "fammi vedere tutto".
+**Giuseppe, a single operator.** ChronoStep is his personal operational diary: one real account, his
+data, no collaboration. He opens it **a few times a day** — in the morning, after lunch, at the end
+of the day — from a desktop. Every visit is a re-orientation: the question he brings with him is
+"what do I do now?", not "show me everything".
 
-**Un account demo pubblico**, con credenziali mostrate sulla schermata di accesso, esiste perché
-l'app possa essere fatta provare a qualcuno. È un utente secondario reale, non un'ipotesi: chi
-arriva da lì non conosce il prodotto e non ha dati propri.
+**A public demo account**, with credentials shown on the sign-in screen, exists so the app can be
+handed to someone to try. It is a real secondary user, not a hypothesis: whoever arrives that way
+does not know the product and has no data of their own — and, because those credentials are public,
+it is **read-only**: it opens every screen and changes nothing, so what one visitor sees is what the
+next one sees.
 
 ## Product Purpose
 
-Tenere insieme tre cose che di solito stanno in strumenti diversi: **cosa c'è da fare**, **com'è
-scomposto**, e **dove sono finite le ore**. Il successo è che a fine mese esista un consuntivo
-attendibile senza che nessuno abbia dovuto ricostruire la giornata a memoria, e che all'apertura si
-capisca in pochi secondi cosa merita attenzione adesso.
+Hold together three things that usually sit in different tools: **what there is to do**, **how it
+breaks down**, and **where the hours went**. Success is that at the end of the month a trustworthy
+monthly report exists without anyone having had to reconstruct a day from memory, and that on
+opening the app it takes seconds to see what deserves attention now.
 
 ## Positioning
 
-Il meccanismo che un task manager non ha e un time tracker nemmeno: **il tempo si attacca allo
-step, non solo al task**. Un task si scompone in step annidati con ordine e riparentaggio; il timer
-punta a uno step preciso; il work log conserva la nota di cosa è stato fatto. Ne consegue che il
-consuntivo mensile non dice soltanto "8 ore su questo lavoro" ma su quale pezzo di lavoro sono
-andate, e la nota del perché è lì accanto.
+The mechanism a task manager does not have and a time tracker does not either: **time attaches to
+the step, not only to the task**. A task breaks down into nested steps with ordering and
+reparenting; the timer points at one specific step; the work log keeps the note of what was done. It
+follows that the monthly report does not only say "8 hours on this job" but which piece of the job
+they went into, with the note of why right beside it.
 
 ## Operating Context
 
-- Desktop. Il telefono è tollerato, non è il caso da ottimizzare.
-- Sessioni brevi e ripetute nell'arco della giornata, non una sessione lunga.
-- Il timer è un oggetto vivo che attraversa le pagine: può essere in corso mentre si guarda
-  qualcos'altro, e deve poter essere fermato da ovunque.
-- Periodi intensi si alternano a settimane ferme: l'interfaccia incontra regolarmente dati magri.
+- Desktop. The phone is tolerated; it is not the case to optimise for.
+- Short visits repeated across the day, not one long sitting.
+- The timer is a live object that crosses pages: it can be running while something else is on
+  screen, and it must be stoppable from anywhere.
+- Intense stretches alternate with dead weeks: the interface meets thin data regularly.
 
 ## Capabilities and Constraints
 
-**Modello di dominio.** Task → Step annidati (ordine, riparentaggio, auto-completamento verso l'alto)
-→ Work log (`start` / `stop` / `note`, con tag e durata). Ogni documento porta un `userId`.
+**Domain model.** Task → nested Steps (ordering, reparenting, auto-completion upwards) → Work log
+(`start` / `stop` / `note`, with tags and duration). Every document carries a `userId`.
 
-**La forbice di granularità è il vincolo di design centrale.** Un task va da "ricordarmi di mandare
-quella mail" — nessuno step, nessun log, vita di dieci minuti — a un progetto con scadenza, otto step
-su tre livelli e settimane di work log. Vivono nella stessa lista. Un task senza struttura non deve
-sembrare rotto o incompleto accanto a uno strutturato, e le schermate non devono presupporre che
-esista una gerarchia.
+**The spread of granularity is the central design constraint.** A task ranges from «ricordarmi
+di mandare quella mail» ("remind me to send that email") — no steps, no logs, a ten-minute
+lifespan — to a project with a due date, eight steps across three levels and weeks of work log.
+They live in the same list. A task with no structure must not look broken or unfinished next to a
+structured one, and the screens must not presuppose that a hierarchy exists.
 
-**Vocabolario neutro.** Il dominio è "qualsiasi task lavorativo": nessuna parola dell'interfaccia deve
-presumere un cliente, una commessa, una fattura o un progetto software. I tag sono il meccanismo con
-cui l'utente introduce il proprio vocabolario.
+**Neutral vocabulary.** The domain is "any work task": no word in the interface may presuppose a
+client, a job order, an invoice or a software project. Tags are the mechanism through which the user
+brings in their own vocabulary.
 
-**Tecnici.**
-- Next.js App Router; tutte le pagine sono client component. Nessun server tier, nessuna API route,
-  nessuna server action.
-- Firebase client SDK: Auth email/password e Firestore. Le regole Firestore sono l'unico confine fra
-  i dati di due account — non esiste un livello server che possa ricontrollare.
-- Nessun listener realtime: si legge a richiesta e si rilegge dopo ogni scrittura.
-- Le registrazioni possono essere chiuse via variabile d'ambiente. Essendo `NEXT_PUBLIC_`, è un
-  filtro dell'interfaccia e non un controllo: chiudere davvero le registrazioni è una configurazione
-  di Firebase Auth.
+**Cattura (capture from notes).** The first draft of a task can be written by the Claude API
+from pasted notes: out come tasks with their fields filled in, nested steps, steps to attach to
+a task that already exists, and work-log entries. It is not an assistant and it is not a chat —
+it is a single pass from text to proposal. **The proposal is not data**: it arrives fully ticked
+and editable, and becomes part of the record only when the user presses the button. That matters
+most for the minutes: a note carrying a duration weighs on the monthly report exactly like a
+timed session, and this is the last screen where it can be refused (principle 4).
 
-**Copy.** Italiano, in tutta l'interfaccia.
+**Technical.**
+- Next.js App Router; every page is a client component. No server actions, and **exactly one server
+  route**: `/api/ai/capture`, which exists solely because a Claude API key cannot live in a browser.
+  It holds no Firebase credentials, opens no database and writes nothing: it returns a proposal, and
+  the client is always the one that writes.
+- Firebase client SDK: email/password Auth and Firestore. The Firestore rules are the only boundary
+  between two accounts' data — there is no server tier that could check again.
+- Capture from notes is optional: without `ANTHROPIC_API_KEY` the app works in full and the screen
+  says the feature is off. Access is restricted to a list of addresses, because the demo account is
+  public and every request costs money. **The demo account is deliberately outside that list**, and
+  the screen it lands on says so and offers nothing to click — a control that fails after the fact
+  is a worse answer than one that never pretended.
+- No realtime listeners: read on demand, re-read after every write.
+- Registrations can be closed through an environment variable. Being `NEXT_PUBLIC_`, it is an
+  interface filter and not a control: closing registrations for real is a Firebase Auth setting.
+
+**Copy.** Italian, throughout the interface.
 
 ## Brand Commitments
 
-Il nome è **ChronoStep**. La voce è quella di uno strumento personale: diretta, concreta, mai
-promozionale, mai congratulatoria senza motivo. L'app parla a una persona che conosce già i propri
-dati e non va né istruita né lodata.
+The name is **ChronoStep**. The voice is that of a personal tool: direct, concrete, never
+promotional, never congratulatory without cause. The app speaks to a person who already knows their
+own data and needs neither instruction nor praise.
 
 ## Evidence on Hand
 
-- **Nessun dato di produzione da preservare.** Il Firestore contiene dati vecchi più quelli
-  dell'account demo, e può essere svuotato. Il modello dati è quindi correggibile dove è storto,
-  senza migrazione.
-- Nessun asset di marca esistente: niente logo, niente palette ereditata, nessun font vincolato.
-- Nessuna testimonianza, metrica d'uso o caso reale. Non vanno inventati.
+- **No production data to preserve.** Firestore holds old data plus the demo account's, and can be
+  emptied. The data model is therefore fixable where it is crooked, with no migration.
+- No existing brand assets: no logo, no inherited palette, no mandated font.
+- No testimonials, usage metrics or real cases. They are not to be invented.
 
 ## Product Principles
 
-1. **Ogni schermata risponde prima di mostrare.** L'utente conosce i propri dati; quello che non ha
-   è la conclusione. La pagina la dice, poi la sostiene con i numeri.
-2. **Un verdetto è un'affermazione verificabile, non un incoraggiamento.** Va calcolato da regole
-   sui dati e deve poter dire che le cose vanno male. Un verdetto compiacente è un bug.
-3. **I dati magri sono lo stato normale, non un caso limite.** Un account nuovo, un mese fermo, un
-   task senza step: sono all'ordine del giorno e vanno progettati, non tappati con un vuoto.
-4. **Il tempo registrato deve essere difendibile.** Meglio non contare dei minuti che inventarne: una
-   sessione ambigua si scarta, non si arrotonda.
-5. **Nessuna scrittura fallisce in silenzio.** Se un salvataggio non va a buon fine l'utente lo deve
-   vedere, perché non c'è un server che possa rimediare dopo.
+1. **Every screen answers before it shows.** The user knows their own data; what they do not have
+   is the conclusion. The page states it, then backs it with the figures.
+2. **A verdict is a checkable claim, not encouragement.** It has to be computed by rules over the
+   data and must be able to say that things are going badly. A flattering verdict is a bug.
+3. **Thin data is the normal state, not an edge case.** A new account, a dead month, a task with no
+   steps: they are routine and have to be designed for, not patched over with a blank.
+4. **Recorded time has to be defensible.** Better to leave minutes uncounted than to invent them: an
+   ambiguous session is dropped, not rounded.
+5. **No write fails silently.** If a save does not go through the user has to see it, because there
+   is no server that can make it good afterwards.
 
 ## Accessibility & Inclusion
 
-WCAG 2.1 AA come base obbligatoria, resa vincolante dal riprogetto in corso: contrasto del testo
-informativo ≥ 4.5:1 in entrambi i temi, ogni controllo con un'etichetta programmaticamente
-associata, i dialoghi come veri dialoghi (ruolo, trappola del focus, ripristino del focus), focus
-sempre visibile, e ogni interazione raggiungibile da tastiera. Doppio tema chiaro/scuro con
-interruttore esplicito, che rispetta `prefers-color-scheme` come stato iniziale.
+WCAG 2.1 AA as the mandatory floor, made binding by the redesign under way: informational text at
+≥ 4.5:1 contrast in both themes, every control with a programmatically associated label, dialogs
+that are real dialogs (role, focus trap, focus restore), focus always visible, and every interaction
+reachable from the keyboard. Light and dark themes with an explicit toggle, honouring
+`prefers-color-scheme` as the initial state.

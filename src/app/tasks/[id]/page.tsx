@@ -129,6 +129,7 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
     steps,
     workLogs,
     isHydrated,
+    isReadOnly,
     loadError,
     createStep,
     createWorkLog,
@@ -472,16 +473,25 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
         ) : null}
 
         <Verdict verdict={reading.verdict} dateline={dateline} headingAs="p">
+          {/*
+            Read-only accounts get no actions at all here. The band in the chrome has already said
+            why; repeating it beside every control would be nagging, and leaving the controls up
+            would be worse — they cannot work.
+          */}
           <div className="flex flex-wrap items-center gap-3">
-            {!isTimerHere ? (
+            {!isReadOnly && !isTimerHere ? (
               <Button variant="primary" onClick={() => handleStart(reading.nextStep)}>
                 {reading.nextStep ? `Avvia su «${reading.nextStep.title}»` : "Avvia una sessione"}
               </Button>
             ) : null}
-            <Button onClick={openTaskDialog}>Modifica</Button>
-            <Button variant="quiet" onClick={() => setIsTaskDeleteOpen(true)}>
-              Elimina
-            </Button>
+            {!isReadOnly ? (
+              <>
+                <Button onClick={openTaskDialog}>Modifica</Button>
+                <Button variant="quiet" onClick={() => setIsTaskDeleteOpen(true)}>
+                  Elimina
+                </Button>
+              </>
+            ) : null}
           </div>
         </Verdict>
 
@@ -524,13 +534,15 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  onClick={() => openStepDialog("create")}
-                  className="font-mono text-tiny text-ink underline underline-offset-4"
-                >
-                  Aggiungi
-                </button>
+                {!isReadOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => openStepDialog("create")}
+                    className="font-mono text-tiny text-ink underline underline-offset-4"
+                  >
+                    Aggiungi
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -607,7 +619,7 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                         <select
                           id={`stato-${step.id}`}
                           value={step.status}
-                          disabled={changeStatus.pending}
+                          disabled={isReadOnly || changeStatus.pending}
                           onChange={(event) =>
                             void changeStatus.run(
                               () => updateStep(step.id, { status: event.target.value as StepStatus }),
@@ -624,7 +636,7 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                         </select>
 
                         <span className="w-12 shrink-0">
-                          {!isTimerHere && step.status !== "done" ? (
+                          {!isReadOnly && !isTimerHere && step.status !== "done" ? (
                             <button
                               type="button"
                               onClick={() => handleStart(step)}
@@ -641,6 +653,8 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                           tree of eight rows. They stay reachable by keyboard through focus-within.
                         */}
                         <span className="flex w-[9.5rem] justify-end gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          {isReadOnly ? null : (
+                          <>
                           <button
                             type="button"
                             onClick={() => openStepDialog("edit", step)}
@@ -657,6 +671,8 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                           >
                             Elimina
                           </button>
+                          </>
+                          )}
                         </span>
                       </span>
                     </li>
@@ -680,17 +696,19 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                   </span>
                 ) : null}
               </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setLogForm({ ...emptyLogForm, tags: task.tags?.join(", ") ?? "" });
-                  saveLog.clearError();
-                  setLogDialog({ mode: "create" });
-                }}
-                className="font-mono text-tiny text-ink underline underline-offset-4"
-              >
-                Aggiungi
-              </button>
+              {!isReadOnly ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogForm({ ...emptyLogForm, tags: task.tags?.join(", ") ?? "" });
+                    saveLog.clearError();
+                    setLogDialog({ mode: "create" });
+                  }}
+                  className="font-mono text-tiny text-ink underline underline-offset-4"
+                >
+                  Aggiungi
+                </button>
+              ) : null}
             </div>
 
             {orderedLogs.length === 0 ? (
@@ -731,6 +749,8 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                           <span className="font-mono text-tiny text-ink-muted">su {step.title}</span>
                         ) : null}
                         <span className="ml-auto flex gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          {isReadOnly ? null : (
+                          <>
                           <button
                             type="button"
                             onClick={() => {
@@ -754,6 +774,8 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
                           >
                             Elimina
                           </button>
+                          </>
+                          )}
                         </span>
                       </div>
                       {log.message ? (

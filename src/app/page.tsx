@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import AppShell from "../components/AppShell";
 import Verdict from "../components/Verdict";
 import { Button, StatusChip, TagList } from "../components/controls";
+import { useAiAccess } from "../hooks/useAiAccess";
 import { useAuth } from "../hooks/useAuth";
 import { useNow } from "../hooks/useNow";
 import { useTaskStore } from "../hooks/useTaskStore";
@@ -37,7 +38,8 @@ const dueLabel = (days?: number) => {
 
 const TodayPage = () => {
   const { user } = useAuth();
-  const { tasks, steps, workLogs, isHydrated, loadError, refresh } = useTaskStore();
+  const aiAccess = useAiAccess();
+  const { tasks, steps, workLogs, isHydrated, isReadOnly, loadError, refresh } = useTaskStore();
   const { timerState, elapsedMinutes } = useTimer();
   const now = useNow();
 
@@ -120,11 +122,29 @@ const TodayPage = () => {
         ) : (
           <>
             <Verdict verdict={reading.verdict} dateline={dateline} size="large">
-              {reading.verdict.isSparse ? (
-                <Link href="/tasks">
-                  <Button variant="primary">Crea il primo task</Button>
-                </Link>
-              ) : null}
+              {/*
+                Cattura is offered here as well as in the nav because this is the screen the user
+                arrives on, and the moment they have something in their head to write down is this
+                one — not the moment they think to go looking for a menu item.
+
+                It is offered only to an account that can actually use it. The demo account cannot,
+                and a link that leads somewhere it will be turned away is worse than no link.
+              */}
+              <div className="flex flex-wrap items-center gap-6">
+                {reading.verdict.isSparse && !isReadOnly ? (
+                  <Link href="/tasks">
+                    <Button variant="primary">Crea il primo task</Button>
+                  </Link>
+                ) : null}
+                {aiAccess.allowed ? (
+                  <Link
+                    href="/capture"
+                    className="font-mono text-tiny text-ink-muted no-underline hover:text-ink"
+                  >
+                    Parti dalle tue note →
+                  </Link>
+                ) : null}
+              </div>
             </Verdict>
 
             {decisions.length > 0 ? (

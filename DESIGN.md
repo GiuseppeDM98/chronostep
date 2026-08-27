@@ -297,8 +297,8 @@ as a ruled table without a table's chrome. Row hover is a `sunken` wash across t
 Responsive behaviour uses one breakpoint, 640px, and only for real reflows: the verdict steps from
 2.125rem to 2.75rem on the home screen; a decision row's metadata drops beneath its title below the
 breakpoint; the header nav takes a full row and scrolls horizontally rather than wrapping into a
-five-line column; the user's email is hidden. There is no mobile-only navigation pattern and no
-hamburger — the same five links are always present.
+column one line per link tall; the user's email is hidden. There is no mobile-only navigation
+pattern and no hamburger — the same six links are always present.
 
 The verdict paragraph is capped at 68ch, inside the 65–75ch reading band. Nothing else in the app is
 measure-capped, because nothing else is prose at length.
@@ -385,9 +385,36 @@ a bottom rule), the dialog, and the error note.
 - **Hover / Focus:** border moves to `line-strong` on hover and `focus` on focus; the global
   `:focus-visible` ring is a 2px `focus` outline at 2px offset, and the caret is `focus`.
 - **Placeholder:** `ink-muted` at full opacity.
+- **Hidden label:** `Field` takes `labelHidden`, which moves the label to `sr-only` and lets the
+  control sit directly in its parent's row or grid. For a ruled table of controls where a column
+  heading already says what each one is; the label still exists, because the alternative — dropping
+  it — is the failure `Field` was built to make impossible.
+- **Checkbox:** the native control at 1rem square with `accent-ink`, and nothing else. It is already
+  a square in this form language, its unchecked state already reads as "off", and its label is
+  `sr-only` because the row beside it is the label. The only place it appears is the capture review,
+  where every row can be dropped.
+
+### Read-Only Band
+A full-width band in the chrome, above the running-session bar: `warn-field` ground, `ink` text, a
+bottom rule in `line`. It carries one sentence — this account may look and not change. `warn` rather
+than `bad` because nothing is wrong; it is a condition to know about before trying something, not a
+failure. It lives in the chrome for the same reason the session bar does: it is true of the whole
+application, not of whichever screen is open. While it shows, the screens below it render no write
+controls at all rather than disabled ones — except where disabling carries the meaning better, as a
+step's status menu does, because its value is information worth reading.
+
+### Review Row (Cattura)
+A ruled row that is also a form: a checkbox, then the proposed value in an editable control rather
+than as text. Nested rows carry the same `depth * 1.5rem` indent and the same mono numbering gutter
+("1", "1.1") as the task screen, so a proposed outline and a real one read identically. A dropped
+row stays in place at 50% opacity instead of disappearing — a list that reflows under the cursor
+makes the next tick a guess. Dropping a row drops what is nested under it, and those rows dim and
+lock with it: the screen asks `droppedSteps` the same question the writer does, so a row that is
+still upright is a row that is still going to be written. A checkbox that disagrees with the verdict
+above it is the one defect this component cannot survive.
 
 ### Navigation
-Five permanent links in mono at 0.75rem inside a `panel` header with a bottom rule. The active item
+Six permanent links in mono at 0.75rem inside a `panel` header with a bottom rule. The active item
 carries `aria-current="page"`, a 2px `ink` bottom border and medium weight; inactive items are
 `ink-muted` with a transparent border and raise to `ink` on hover. Below 640px the nav takes a full
 row of its own and scrolls horizontally. The wordmark is mono micro uppercase at +0.2em.

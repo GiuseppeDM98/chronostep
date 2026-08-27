@@ -9,14 +9,16 @@
     "lint": "next lint",
     "test:rules": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-chronostep \"node tests/firestore-rules.test.mjs\"",
     "test:dates": "node tests/run-dates.mjs",
-    "test": "npm run test:dates && npm run test:insights && npm run test:verdicts && npm run test:rules",
+    "test": "npm run test:dates && npm run test:insights && npm run test:verdicts && npm run test:capture && npm run test:rules",
     "test:insights": "node --import ./tests/register-hooks.mjs tests/insights.test.mts",
     "test:verdicts": "node --import ./tests/register-hooks.mjs tests/verdicts.test.mts",
     "emulators": "firebase emulators:start --only auth,firestore --project chronostep-9ab39",
     "seed": "node scripts/seed-emulator.mjs",
-    "dev:emulator": "next dev"
+    "dev:emulator": "next dev",
+    "test:capture": "node --import ./tests/register-hooks.mjs tests/capture.test.mts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "firebase": "^11.0.1",
     "next": "^16.3.3",
     "react": "^18.2.0",

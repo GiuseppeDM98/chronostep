@@ -24,15 +24,28 @@ type FieldProps = {
   label: string;
   hint?: string;
   required?: boolean;
+  /**
+   * Take the label off the screen without taking it away.
+   *
+   * For a ruled row of controls where a column heading already says what each one is: printing
+   * "Titolo" beside forty inputs is noise, and dropping the label instead would be the exact
+   * failure this component exists to make impossible.
+   */
+  labelHidden?: boolean;
   children: (props: { id: string; "aria-describedby"?: string }) => ReactNode;
 };
 
-export const Field = ({ label, hint, required, children }: FieldProps) => {
+export const Field = ({ label, hint, required, labelHidden = false, children }: FieldProps) => {
   const id = useId();
   const hintId = `${id}-hint`;
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="font-mono text-micro uppercase tracking-wider text-ink-muted">
+    <div className={labelHidden ? "contents" : "flex flex-col gap-1.5"}>
+      <label
+        htmlFor={id}
+        className={
+          labelHidden ? "sr-only" : "font-mono text-micro uppercase tracking-wider text-ink-muted"
+        }
+      >
         {label}
         {required ? <span className="text-bad"> *</span> : null}
       </label>

@@ -61,7 +61,7 @@ const emptyForm = {
 };
 
 const TasksPage = () => {
-  const { tasks, steps, workLogs, isHydrated, loadError, createTask, deleteTask, refresh } =
+  const { tasks, steps, workLogs, isHydrated, isReadOnly, loadError, createTask, deleteTask, refresh } =
     useTaskStore();
   const now = useNow();
 
@@ -173,9 +173,12 @@ const TasksPage = () => {
         ) : (
           <>
             <Verdict verdict={verdict}>
-              <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
-                Nuovo task
-              </Button>
+              {/* Nothing to offer a read-only account: the band in the chrome has said why. */}
+              {!isReadOnly ? (
+                <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+                  Nuovo task
+                </Button>
+              ) : null}
             </Verdict>
 
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -258,13 +261,15 @@ const TasksPage = () => {
                             : ""}
                         </span>
 
-                        <button
-                          type="button"
-                          onClick={() => setPendingDelete(task)}
-                          className="font-mono text-tiny text-ink-muted underline underline-offset-4 transition-opacity hover:text-bad focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                        >
-                          Elimina
-                        </button>
+                        {!isReadOnly ? (
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete(task)}
+                            className="font-mono text-tiny text-ink-muted underline underline-offset-4 transition-opacity hover:text-bad focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            Elimina
+                          </button>
+                        ) : null}
                       </div>
                     </li>
                   );

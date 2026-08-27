@@ -38,7 +38,15 @@ import type {
   UpdateWorkLogInput,
   WorkLog,
 } from "../lib/types";
+import {
+  logTimestamp,
+  resolveOutline,
+  type CapturePlan,
+  type CaptureStepDraft,
+  type CaptureWriteResult,
+} from "../lib/aiCapture";
 import { normalizeDayKey } from "../lib/dates";
+import { READ_ONLY_MESSAGE, isDemoAccount } from "../lib/demoAccount";
 import { firebaseApp } from "../lib/firebaseClient";
 import { useAuth } from "./useAuth";
 
@@ -184,8 +192,90 @@ const deleteStepWithChildren = async (
   await deleteDoc(doc(db, "steps", stepId));
 };
 
+/**
+ * The next `order` a new top-level step of this task should take.
+ *
+ * Read from Firestore rather than from the React snapshot: the snapshot can be a refresh behind,
+ * and a stale maximum produces two steps claiming the same position — which the tree then sorts by
+ * title, silently reordering work the user just wrote.
+ */
+const nextRootOrder = async (db: Firestore, taskId: string): Promise<number> => {
+  const snapshot = await getDocs(query(stepsCollection(db), where("taskId", "==", taskId)));
+  const rootOrders = snapshot.docs
+    .map((docSnap) => docSnap.data())
+    .filter((data) => !data.parentStepId)
+    .map((data) => (typeof data.order === "number" ? data.order : 0));
+  return rootOrders.length > 0 ? Math.max(...rootOrders) + 1 : 1;
+};
+
+/**
+ * Write one proposed outline under a task, parents before children.
+ *
+ * @param rootStartOrder - Where the first top-level step lands. 1 for a task being created now,
+ *   `nextRootOrder(...)` for a task that already has steps.
+ * @param failures - Appended to, one sentence per step that did not land.
+ * @returns How many steps were written.
+ *
+ * Sequential rather than parallel because a child needs its parent's generated id, and because a
+ * cascade of concurrent writes reports its failures as one rejected Promise.all instead of as the
+ * three specific steps that are missing.
+ */
+const writeOutline = async (
+  db: Firestore,
+  userId: string,
+  taskId: string,
+  drafts: CaptureStepDraft[],
+  rootStartOrder: number,
+  failures: string[],
+): Promise<number> => {
+  const resolved = resolveOutline(drafts, rootStartOrder);
+  const idByIndex = new Map<number, string>();
+  const now = new Date().toISOString();
+  let created = 0;
+
+  for (let index = 0; index < resolved.length; index += 1) {
+    const { draft, parentIndex, order } = resolved[index];
+    const parentStepId = parentIndex === null ? null : idByIndex.get(parentIndex) ?? null;
+    // Writing a substep whose parent failed would quietly promote it to top level, under a heading
+    // the user never approved. It is dropped instead, and said out loud.
+    if (parentIndex !== null && !parentStepId) {
+      failures.push(`«${draft.title}» dipendeva da uno step che non è stato creato.`);
+      continue;
+    }
+
+    try {
+      const ref = await addDoc(stepsCollection(db), {
+        userId,
+        taskId,
+        parentStepId,
+        title: draft.title,
+        description: draft.description ?? null,
+        status: draft.status,
+        order,
+        dueDate: draft.dueDate ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      idByIndex.set(index, ref.id);
+      created += 1;
+    } catch {
+      failures.push(`Non sono riuscito a creare lo step «${draft.title}».`);
+    }
+  }
+
+  return created;
+};
+
 export type TaskStore = TaskStoreState & {
   isHydrated: boolean;
+  /**
+   * True for the public demo account, whose every write the Firestore rules refuse.
+   *
+   * Screens read it to stop OFFERING what cannot be done. They are not deciding anything by it:
+   * the decision is in `firestore.rules`, and `ensureCanWrite` refuses in the store regardless of
+   * what any screen chose to render.
+   */
+  isReadOnly: boolean;
   /** Set when the snapshot could not be read. The UI must say so rather than render an empty account. */
   loadError: string | null;
   createTask: (input: CreateTaskInput) => Promise<void>;
@@ -198,6 +288,8 @@ export type TaskStore = TaskStoreState & {
   createWorkLog: (input: CreateWorkLogInput) => Promise<void>;
   updateWorkLog: (id: string, input: UpdateWorkLogInput) => Promise<void>;
   deleteWorkLog: (id: string) => Promise<void>;
+  /** Write a whole reviewed capture plan. Never throws: it reports what landed and what did not. */
+  applyCapturePlan: (plan: CapturePlan) => Promise<CaptureWriteResult>;
   refresh: () => Promise<void>;
 };
 
@@ -234,6 +326,26 @@ const useTaskStoreState = (): TaskStore => {
     }
     return user.uid;
   }, [user]);
+
+  /**
+   * The uid, and the right to write with it.
+   *
+   * Every write in this store goes through here rather than through `ensureUserId`, so the demo
+   * account cannot write by way of a control somebody forgot to hide. That is the point of putting
+   * it in one place: the interface has a few dozen write affordances and this has one.
+   *
+   * It is not the boundary — `firestore.rules` is, and it would refuse these writes anyway. What
+   * this adds is a sentence the user can read instead of a permission error from a database.
+   */
+  const ensureCanWrite = useCallback(() => {
+    const uid = ensureCanWrite();
+    if (isDemoAccount(user?.email)) {
+      throw new Error(READ_ONLY_MESSAGE);
+    }
+    return uid;
+  }, [ensureUserId, user]);
+
+  const isReadOnly = isDemoAccount(user?.email);
 
   const applySnapshot = useCallback((snapshot: TaskStoreSnapshot, sequence: number) => {
     if (sequence < appliedSequence.current) return;
@@ -300,7 +412,7 @@ const useTaskStoreState = (): TaskStore => {
 
   const createTask = useCallback(
     async (input: CreateTaskInput) => {
-      const uid = ensureUserId();
+      const uid = ensureCanWrite();
       const now = new Date().toISOString();
       await addDoc(tasksCollection(db), {
         userId: uid,
@@ -317,12 +429,12 @@ const useTaskStoreState = (): TaskStore => {
       });
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const updateTask = useCallback(
     async (id: string, input: UpdateTaskInput) => {
-      ensureUserId();
+      ensureCanWrite();
       // Presence of the KEY decides whether a field is written; its value decides what to write.
       // Testing `!== undefined` instead made every "svuota il campo" edit a silent no-op: callers
       // express a cleared control as `{ dueDate: undefined }` — a key that is present but carries no
@@ -339,12 +451,12 @@ const useTaskStoreState = (): TaskStore => {
       await updateDoc(doc(db, "tasks", id), data);
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const deleteTask = useCallback(
     async (id: string) => {
-      ensureUserId();
+      ensureCanWrite();
       // Children first, root last. Any order can fail halfway without transactions; this one at
       // least never leaves steps and logs stranded under a task that no longer exists, because the
       // task document is the last thing to go.
@@ -357,12 +469,12 @@ const useTaskStoreState = (): TaskStore => {
       await deleteDoc(doc(db, "tasks", id));
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const createStep = useCallback(
     async (input: CreateStepInput) => {
-      const uid = ensureUserId();
+      const uid = ensureCanWrite();
       const now = new Date().toISOString();
       await addDoc(stepsCollection(db), {
         userId: uid,
@@ -378,7 +490,7 @@ const useTaskStoreState = (): TaskStore => {
       });
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const readStepMetadata = useCallback(
@@ -461,7 +573,7 @@ const useTaskStoreState = (): TaskStore => {
 
   const updateStep = useCallback(
     async (id: string, input: UpdateStepInput) => {
-      ensureUserId();
+      ensureCanWrite();
       // Read the previous parent from Firestore rather than from the React snapshot: the snapshot
       // can be a refresh behind, and a stale parent id sends the completion cascade up the wrong
       // branch.
@@ -494,7 +606,7 @@ const useTaskStoreState = (): TaskStore => {
     },
     [
       db,
-      ensureUserId,
+      ensureCanWrite,
       refreshState,
       readStepMetadata,
       completeAncestorStepsIfReady,
@@ -504,7 +616,7 @@ const useTaskStoreState = (): TaskStore => {
 
   const updateStepOrders = useCallback(
     async (updates: Array<{ id: string; order: number }>) => {
-      ensureUserId();
+      ensureCanWrite();
       if (updates.length === 0) return;
       const now = new Date().toISOString();
       for (let index = 0; index < updates.length; index += BATCH_LIMIT) {
@@ -517,21 +629,21 @@ const useTaskStoreState = (): TaskStore => {
       }
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const deleteStep = useCallback(
     async (id: string) => {
-      ensureUserId();
+      ensureCanWrite();
       await deleteStepWithChildren(db, id);
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const createWorkLog = useCallback(
     async (input: CreateWorkLogInput) => {
-      const uid = ensureUserId();
+      const uid = ensureCanWrite();
       const now = new Date().toISOString();
       await addDoc(workLogsCollection(db), {
         userId: uid,
@@ -547,12 +659,12 @@ const useTaskStoreState = (): TaskStore => {
       });
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const updateWorkLog = useCallback(
     async (id: string, input: UpdateWorkLogInput) => {
-      ensureUserId();
+      ensureCanWrite();
       // Key-presence semantics, as in updateTask. Without it a work log could never be detached
       // from its step, nor its message emptied.
       const data: Record<string, unknown> = { updatedAt: new Date().toISOString() };
@@ -565,21 +677,142 @@ const useTaskStoreState = (): TaskStore => {
       await updateDoc(doc(db, "workLogs", id), data);
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
   );
 
   const deleteWorkLog = useCallback(
     async (id: string) => {
-      ensureUserId();
+      ensureCanWrite();
       await deleteDoc(doc(db, "workLogs", id));
       await refreshState();
     },
-    [db, ensureUserId, refreshState],
+    [db, ensureCanWrite, refreshState],
+  );
+
+  /**
+   * Write a reviewed capture plan: new tasks with their outlines, outlines appended to tasks that
+   * already exist, and notes for the work log.
+   *
+   * Two things separate this from calling `createTask` and `createStep` in a loop, and both are the
+   * reason it exists. It refreshes ONCE at the end — every individual create re-reads the whole
+   * account, so a plan of three tasks and twelve steps would have cost fifteen full re-reads. And
+   * it never throws: a plan is many independent writes with no transaction around them, so the
+   * honest report is which ones landed, not a single rejection that leaves the user guessing how
+   * far it got.
+   */
+  const applyCapturePlan = useCallback(
+    async (plan: CapturePlan): Promise<CaptureWriteResult> => {
+      const uid = ensureCanWrite();
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const failures: string[] = [];
+      let createdTasks = 0;
+      let createdSteps = 0;
+      let createdLogs = 0;
+
+      // The id Firestore generated for each proposed task, keyed by the handle its notes point at.
+      const idByRef = new Map<string, string>();
+
+      // New tasks, each with its own outline hanging off the id Firestore just generated.
+      for (const draft of plan.tasks) {
+        let taskId: string | undefined;
+        try {
+          const ref = await addDoc(tasksCollection(db), {
+            userId: uid,
+            title: draft.title,
+            description: draft.description ?? null,
+            status: draft.status,
+            priority: draft.priority ?? null,
+            tags: draft.tags,
+            dueDate: draft.dueDate ?? null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+          taskId = ref.id;
+          idByRef.set(draft.ref, ref.id);
+          createdTasks += 1;
+        } catch {
+          // The steps have to be named here. Writing the outline inside this try meant a failed
+          // task took its whole outline with it and reported one line about the task alone, so a
+          // plan could lose eight steps and mention none of them.
+          failures.push(
+            draft.steps.length > 0
+              ? `Non sono riuscito a creare il task «${draft.title}», e con lui restano fuori i suoi ${draft.steps.length} step.`
+              : `Non sono riuscito a creare il task «${draft.title}».`,
+          );
+        }
+        if (taskId) {
+          createdSteps += await writeOutline(db, uid, taskId, draft.steps, 1, failures);
+        }
+      }
+
+      // Outlines appended to a task that already exists, after whatever is already there.
+      for (const addition of plan.additions) {
+        try {
+          const startOrder = await nextRootOrder(db, addition.taskId);
+          createdSteps += await writeOutline(
+            db,
+            uid,
+            addition.taskId,
+            addition.steps,
+            startOrder,
+            failures,
+          );
+        } catch {
+          failures.push("Non sono riuscito ad aggiungere gli step a un task esistente.");
+        }
+      }
+
+      for (const log of plan.logs) {
+        // A note either names a task that already existed or points at one this run just created.
+        // If that task failed to be written, the note has nothing to hang off and is reported
+        // rather than filed under whatever else is at hand.
+        const targetTaskId = log.taskId ?? (log.taskRef ? idByRef.get(log.taskRef) : undefined);
+        if (!targetTaskId) {
+          failures.push(
+            `La nota «${log.message}» non è stata registrata: il task a cui apparteneva non è stato creato.`,
+          );
+          continue;
+        }
+
+        try {
+          await addDoc(workLogsCollection(db), {
+            userId: uid,
+            taskId: targetTaskId,
+            stepId: log.stepId ?? null,
+            message: log.message,
+            tags: log.tags,
+            // Always a note. A start/stop pair is the record of a timer that ran; see
+            // CaptureLogDraft in src/lib/aiCapture.ts.
+            type: "note",
+            timestamp: logTimestamp(log.dayKey, now),
+            durationMinutes: log.durationMinutes ?? null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+          createdLogs += 1;
+        } catch {
+          failures.push("Non sono riuscito a registrare una voce di work log.");
+        }
+      }
+
+      try {
+        await refreshState();
+      } catch {
+        // The writes happened; only the re-read did not. Saying so is the difference between a
+        // screen that looks empty and a screen the user knows is stale.
+        failures.push("Ho scritto, ma non sono riuscito a rileggere i dati. Ricarica la pagina.");
+      }
+
+      return { createdTasks, createdSteps, createdLogs, failures };
+    },
+    [db, ensureCanWrite, refreshState],
   );
 
   return {
     ...state,
     isHydrated,
+    isReadOnly,
     loadError,
     createTask,
     updateTask,
@@ -591,6 +824,7 @@ const useTaskStoreState = (): TaskStore => {
     createWorkLog,
     updateWorkLog,
     deleteWorkLog,
+    applyCapturePlan,
     refresh: refreshState,
   };
 };

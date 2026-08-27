@@ -19,6 +19,7 @@
  * Ordering matters: the rules are evaluated top to bottom and the first match wins, so the sequence
  * of the `if`s in each builder is the editorial priority of the screen.
  */
+import { planTotals, type CapturePlan, type CaptureWriteResult } from "./aiCapture";
 import {
   daysBetweenKeys,
   daysUntilDue,
@@ -721,6 +722,168 @@ export const readTaskList = (shown: Task[], all: Task[], now: Date): Verdict => 
   }
 
   return { headline, sentiment, detail, isSparse: false };
+};
+
+// ─── Cattura ─────────────────────────────────────────────────────────────────
+
+/** Whether this account can use the feature at all, from `useAiAccess`. */
+export type CaptureAccess = "checking" | "allowed" | "not-allowed" | "not-configured";
+
+export type CaptureInput = {
+  access?: CaptureAccess;
+  /** The proposal as it currently stands on screen, already narrowed to what is ticked. */
+  selected?: CapturePlan;
+  /** What the last write produced. Present only after the user has written something. */
+  written?: CaptureWriteResult;
+};
+
+/**
+ * The verdict on the capture screen.
+ *
+ * Ordered like every other builder in this file: the unflattering readings come first. Whether the
+ * account can use the screen at all outranks everything, because nothing below it is true for an
+ * account that cannot. Then a write that lost half its items, because that has to be said before
+ * how much of it worked. A proposal carrying minutes names them — the review is the last place
+ * those minutes can be refused before they start counting towards the report.
+ */
+export const readCapture = (input: CaptureInput): Verdict => {
+  const { access = "allowed", selected, written } = input;
+
+  if (access === "not-allowed") {
+    return {
+      headline: "Questo account non può usare l'AI.",
+      sentiment: "neutral",
+      isSparse: true,
+      detail: [
+        text(
+          "La lettura delle note passa dalla Claude API, che si paga a consumo, ed è aperta solo agli indirizzi in elenco. L'account di prova non è fra questi, perché le sue credenziali sono scritte sulla schermata di accesso e chiunque abbia il link può entrarci. Tutto il resto dell'app funziona normalmente.",
+        ),
+      ],
+    };
+  }
+
+  if (access === "not-configured") {
+    return {
+      headline: "L'AI non è configurata qui.",
+      sentiment: "neutral",
+      isSparse: true,
+      detail: [
+        text(
+          "Manca la chiave della Claude API su questo ambiente. È una funzione facoltativa: senza chiave l'app resta intera, solo questa schermata non ha niente da leggere. La configurazione è in SETUP.md.",
+        ),
+      ],
+    };
+  }
+
+  if (access === "checking") {
+    return {
+      headline: "Un attimo.",
+      sentiment: "neutral",
+      isSparse: true,
+      detail: [text("Sto controllando se questo account può usare l'AI.")],
+    };
+  }
+
+  if (written && written.failures.length > 0) {
+    return {
+      headline: "Una parte non è stata scritta.",
+      sentiment: "bad",
+      isSparse: false,
+      detail: [
+        text("Sono arrivati "),
+        ...countRuns(written.createdTasks, "task", "task", "good"),
+        text(" e "),
+        ...countRuns(written.createdSteps, "step", "step", "good"),
+        text(", ma "),
+        ...countRuns(written.failures.length, "cosa", "cose", "bad"),
+        text(" no. Trovi l'elenco qui sotto: quello che manca va rifatto a mano."),
+      ],
+    };
+  }
+
+  if (written) {
+    const detail: Run[] = [
+      text("In archivio ci sono "),
+      ...countRuns(written.createdTasks, "task", "task", "good"),
+      text(" e "),
+      ...countRuns(written.createdSteps, "step", "step", "good"),
+      text(" in più"),
+    ];
+    if (written.createdLogs > 0) {
+      detail.push(text(", più "));
+      detail.push(...countRuns(written.createdLogs, "voce", "voci", "good"));
+      detail.push(text(" di work log"));
+    }
+    detail.push(text(". Le note sopra restano, se vuoi ripassarle."));
+    return {
+      headline: "Scritto.",
+      sentiment: "good",
+      isSparse: false,
+      detail,
+    };
+  }
+
+  if (selected) {
+    const totals = planTotals(selected);
+    if (totals.tasks === 0 && totals.steps === 0 && totals.logs === 0) {
+      return {
+        headline: "Da queste note non esce niente.",
+        sentiment: "neutral",
+        isSparse: true,
+        detail: [
+          text(
+            selected.unclear.length > 0
+              ? "Quello che c'era scritto non bastava a costruire un task. Sotto trovi cosa è rimasto ambiguo."
+              : "Nessun task, nessuno step, nessuna nota. Prova a scrivere cosa devi fare, non cosa è successo.",
+          ),
+        ],
+      };
+    }
+
+    const detail: Run[] = [];
+    if (totals.tasks > 0) {
+      detail.push(...countRuns(totals.tasks, "task nuovo", "task nuovi"));
+    }
+    if (totals.steps > 0) {
+      if (detail.length > 0) detail.push(text(", "));
+      detail.push(...countRuns(totals.steps, "step", "step"));
+    }
+    if (totals.logs > 0) {
+      if (detail.length > 0) detail.push(text(", "));
+      detail.push(...countRuns(totals.logs, "voce di work log", "voci di work log"));
+    }
+    detail.push(text(". Niente è ancora scritto: togli quello che non ti convince, correggi il resto."));
+
+    // Minutes get their own sentence in the warn colour. A note carrying a duration counts in the
+    // report exactly like a measured session, and this is the last screen where it can be refused.
+    if (totals.minutes > 0) {
+      detail.push(text(" Le note portano "));
+      detail.push(figure(formatMinutes(totals.minutes), "warn"));
+      detail.push(text(" di lavoro già fatto: controlla che siano ore vere."));
+    }
+
+    const headline =
+      totals.tasks > 0
+        ? totals.tasks === 1
+          ? "Ne esce un task."
+          : `Ne escono ${totals.tasks} task.`
+        : totals.steps > 0
+        ? "Ne escono solo step."
+        : "Ne escono solo note.";
+
+    return { headline, sentiment: "neutral", detail, isSparse: false };
+  }
+
+  return {
+    headline: "Scrivi, e diventa un task.",
+    sentiment: "neutral",
+    isSparse: true,
+    detail: [
+      text(
+        "Incolla gli appunti così come sono — una mail, una lista, due righe scritte di fretta. Ne esce una proposta di task, step e note che leggi e correggi prima che finisca in archivio.",
+      ),
+    ],
+  };
 };
 
 // ─── Timeline e Report ───────────────────────────────────────────────────────

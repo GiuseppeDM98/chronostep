@@ -260,6 +260,92 @@ await check(VALID, "tipo di work log fuori enum rifiutato", () =>
 await check(VALID, "step con order non numerico rifiutato", () =>
   assertFails(addDoc(collection(alice, "steps"), step("alice", "taskB", { order: "primo" }))));
 
+// ── 4. ACCOUNT DIMOSTRATIVO ────────────────────────────────────────────────────
+//
+// L'account demo è in sola lettura, e queste regole sono l'unico posto che possa renderlo vero: le
+// sue credenziali sono stampate sulla schermata di accesso, quindi "l'account demo" vuol dire
+// "chiunque abbia il link", e l'interfaccia che gli nasconde i pulsanti è JavaScript servito a quel
+// chiunque.
+//
+// Ogni verifica qui è una COPPIA sullo stesso identico documento: `demo` deve fallire dove `dana`
+// riesce. Un test negativo da solo non proverebbe niente — passerebbe anche con delle regole che
+// vietano quella scrittura a tutti.
+const DEMO = "ACCOUNT DIMOSTRATIVO";
+const DEMO_EMAIL = "admin@example.com";
+
+// Stesso uid non serve: contano l'email nel token e la proprietà del documento.
+const demo = testEnv.authenticatedContext("demoUser", { email: DEMO_EMAIL }).firestore();
+// Il controllo positivo: un account qualunque, con un'email qualunque, e i suoi stessi documenti.
+const dana = testEnv.authenticatedContext("dana", { email: "dana@example.com" }).firestore();
+
+await testEnv.clearFirestore();
+await testEnv.withSecurityRulesDisabled(async (context) => {
+  const db = context.firestore();
+  for (const [uid, suffix] of [
+    ["demoUser", "Demo"],
+    ["dana", "Dana"],
+  ]) {
+    await setDoc(doc(db, "tasks", `task${suffix}`), task(uid));
+    await setDoc(doc(db, "steps", `step${suffix}`), step(uid, `task${suffix}`));
+    await setDoc(doc(db, "workLogs", `log${suffix}`), workLog(uid, `task${suffix}`));
+  }
+});
+
+await check(DEMO, "il demo LEGGE i propri task (la vetrina deve restare visibile)", () =>
+  assertSucceeds(getDoc(doc(demo, "tasks", "taskDemo"))));
+
+await check(DEMO, "il demo legge i propri step e work log", async () => {
+  await assertSucceeds(getDoc(doc(demo, "steps", "stepDemo")));
+  await assertSucceeds(getDoc(doc(demo, "workLogs", "logDemo")));
+});
+
+await check(DEMO, "controllo positivo — dana crea un task", () =>
+  assertSucceeds(addDoc(collection(dana, "tasks"), task("dana", { title: "Task di Dana" }))));
+
+await check(DEMO, "il demo NON crea un task", () =>
+  assertFails(addDoc(collection(demo, "tasks"), task("demoUser", { title: "Task del demo" }))));
+
+await check(DEMO, "controllo positivo — dana modifica il proprio task", () =>
+  assertSucceeds(updateDoc(doc(dana, "tasks", "taskDana"), { title: "Rinominato", updatedAt: NOW })));
+
+await check(DEMO, "il demo NON modifica il proprio task", () =>
+  assertFails(updateDoc(doc(demo, "tasks", "taskDemo"), { title: "Rinominato", updatedAt: NOW })));
+
+await check(DEMO, "controllo positivo — dana crea uno step sul proprio task", () =>
+  assertSucceeds(addDoc(collection(dana, "steps"), step("dana", "taskDana", { title: "Nuovo" }))));
+
+await check(DEMO, "il demo NON crea uno step sul proprio task", () =>
+  assertFails(addDoc(collection(demo, "steps"), step("demoUser", "taskDemo", { title: "Nuovo" }))));
+
+await check(DEMO, "controllo positivo — dana registra una voce di work log", () =>
+  assertSucceeds(addDoc(collection(dana, "workLogs"), workLog("dana", "taskDana"))));
+
+await check(DEMO, "il demo NON registra una voce di work log", () =>
+  assertFails(addDoc(collection(demo, "workLogs"), workLog("demoUser", "taskDemo"))));
+
+await check(DEMO, "controllo positivo — dana cancella il proprio step", () =>
+  assertSucceeds(deleteDoc(doc(dana, "steps", "stepDana"))));
+
+await check(DEMO, "il demo NON cancella il proprio step", () =>
+  assertFails(deleteDoc(doc(demo, "steps", "stepDemo"))));
+
+await check(DEMO, "il demo NON cancella il proprio task né il proprio work log", async () => {
+  await assertFails(deleteDoc(doc(demo, "workLogs", "logDemo")));
+  await assertFails(deleteDoc(doc(demo, "tasks", "taskDemo")));
+});
+
+// L'email si confronta senza distinzione di maiuscole: Firebase Auth non normalizza il caso, e un
+// accesso con "Admin@Example.com" è lo stesso account.
+await check(DEMO, "il demo è riconosciuto anche scritto in maiuscolo", () => {
+  const shouty = testEnv.authenticatedContext("demoUser", { email: "Admin@Example.COM" }).firestore();
+  return assertFails(addDoc(collection(shouty, "tasks"), task("demoUser", { title: "Aggirato" })));
+});
+
+await check(DEMO, "un account senza email nel token scrive normalmente", () => {
+  const tokenless = testEnv.authenticatedContext("erin").firestore();
+  return assertSucceeds(addDoc(collection(tokenless, "tasks"), task("erin", { title: "Di Erin" })));
+});
+
 // ── Report ─────────────────────────────────────────────────────────────────────
 await testEnv.cleanup();
 
