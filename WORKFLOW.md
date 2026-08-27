@@ -1,121 +1,119 @@
 # WORKFLOW.md
 
-Regole di sessione e collaborazione per chi (persona o agente) lavora su questo repo. La Parte 1 è
-lo standard portabile, uguale in ogni repo dove viene adottato. La Parte 2 è locale a ChronoStep.
+Session and collaboration rules for whoever — person or agent — works on this repo. Part 1 is the
+portable standard, identical in every repo that adopts it. Part 2 is local to ChronoStep.
 
-## Parte 1 — Regole di sessione e collaborazione
+## Part 1 — Session and collaboration rules
 
-1. Mai fare commit senza approvazione esplicita. Non eseguire `git commit` (né `--amend`) finché
-   non arriva l'OK per quel commit specifico. Finire il lavoro, riassumere il diff, poi chiedere.
-   Creare il branch e modificare i file non richiede approvazione — solo il commit.
+1. Never commit without explicit approval. Do not run `git commit` (or `--amend`) until the OK for
+   that specific commit arrives. Finish the work, summarise the diff, then ask. Creating the branch
+   and editing files needs no approval — only the commit does.
 
-2. Un branch per sessione. Prima di iniziare lavoro di implementazione, creare un nuovo branch a
-   partire dal branch attivo all'inizio della sessione (controllare sempre quale sia, non dare per
-   scontato master/main).
+2. One branch per session. Before starting implementation work, create a new branch off the branch
+   that was active at the start of the session (always check which one that is, never assume
+   master/main).
 
-3. Un solo commit per sessione. Tutte le modifiche di una sessione vanno squashate in un unico
-   commit, non sparse su più commit.
+3. One commit per session. Every change made in a session is squashed into a single commit, not
+   spread over several.
 
-4. Rispondere sempre in italiano quando si lavora su questo repo (vale per il canale
-   conversazionale — codice, identificatori e commenti restano in inglese).
+4. Always reply in Italian when working on this repo (this covers the conversational channel — code,
+   identifiers and comments stay in English).
 
-### Regola del collaudo guidato
+### Guided manual-testing rule
 
-Quando si deve verificare manualmente che una funzionalità appena implementata funzioni, non
-consegnare una checklist e sparire. Il collaudo si fa insieme, in chat, una fase alla volta. Quattro
-obblighi:
+When a freshly implemented feature has to be verified by hand, do not hand over a checklist and
+disappear. The testing is done together, in chat, one phase at a time. Four obligations:
 
-1. I dati di prova li prepara l'agente — uno script usa-e-getta (non tracciato da git, cancellato a
-   fine collaudo) con "parole spia" (parole inventate tipo fenicottero, ornitorinco, che non
-   compaiono da nessun'altra parte nell'archivio), non a mano da parte dell'utente.
-2. Una fase per messaggio — dare la fase, aspettare il resoconto, poi la successiva. Mai consegnare
-   tutte le fasi insieme: fa saltare i prerequisiti.
-3. Dichiarare l'esito atteso prima di eseguire, non dopo — altrimenti la lettura si adatta sempre a
-   quello che è successo.
-4. Fare ogni controllo che si riesce ad automatizzare, e lasciare all'utente solo quello che non si
-   può fare. "Insieme, in chat" non vuol dire "un click alla volta dettato all'utente": se le sessioni
-   sono JWT o comunque scriptabili, scrivere uno script usa-e-getta che apre un vero browser (es.
-   Playwright) con una sessione autenticata — quella dell'agente stesso se il ruolo lo permette,
-   altrimenti un'identità di prova usa-e-getta creata per l'occasione — e verificare ogni esito sul
-   database o sulla risposta HTTP, mai sul solo aspetto della pagina. Riportare i risultati fase per
-   fase, con l'esito atteso dichiarato prima. Ogni test end-to-end automatico che si è in grado di
-   eseguire, lo si esegue: non dichiarare mai una funzionalità verificata se un controllo automatico
-   che poteva coprirla è rimasto non eseguito. Lasciare all'utente solo ciò che è genuinamente non
-   automatizzabile: giudizio visivo/estetico, hardware fisico (es. uno scanner di barcode reale), o
-   un login interattivo che non si può guidare da script (es. un vero flusso OAuth con MFA).
+1. The agent prepares the test data — a throwaway script (untracked by git, deleted once the testing
+   is over) carrying "marker words" (invented words like fenicottero, ornitorinco — flamingo,
+   platypus — that appear nowhere else in the archive), not the user by hand.
+2. One phase per message — give the phase, wait for the report, then the next one. Never hand over
+   every phase at once: prerequisites end up skipped.
+3. State the expected outcome before running, not after — otherwise the reading always bends to fit
+   what happened.
+4. Run every check that can be automated, and leave the user only what cannot be. "Together, in
+   chat" does not mean "one click at a time dictated to the user": if the sessions are JWTs or are
+   otherwise scriptable, write a throwaway script that drives a real browser (e.g. Playwright) with
+   an authenticated session — the agent's own if its role allows it, otherwise a throwaway test
+   identity created for the occasion — and verify every outcome against the database or the HTTP
+   response, never against how the page looks. Report the results phase by phase, with the expected
+   outcome stated first. Every automatic end-to-end test you are able to run, you run: never declare
+   a feature verified while an automatic check that could have covered it was left unrun. Leave the
+   user only what is genuinely not automatable: visual/aesthetic judgement, physical hardware (e.g. a
+   real barcode scanner), or an interactive login that cannot be driven from a script (e.g. a real
+   OAuth flow with MFA).
 
-Fasi standard da seguire quando ha senso: A-Invarianza (quello che c'era prima funziona ancora) →
-B-Cambio di contesto (il ruolo/stato nuovo è davvero attivo) → C-Comportamento nuovo (fa quello che
-deve, non quello che non deve — qui vale di più il punto 4: automatizza) → D-Sotto la UI (le stesse
-regole reggono chiamando la route a mano) → E-Casi negativi (chi non ha diritti viene respinto, con
-l'errore giusto) → F-Ripristino (configurazione ripristinata, fixture rimosse, script cancellato).
+Standard phases, to follow where they make sense: A-Invariance (what worked before still works) →
+B-Context switch (the new role/state really is active) → C-New behaviour (it does what it must, and
+not what it must not — point 4 counts for most here: automate) → D-Under the UI (the same rules
+hold when the route is called by hand) → E-Negative cases (whoever lacks the rights is refused,
+with the right error) → F-Restore (configuration put back, fixtures removed, script deleted).
 
-Un test negativo da solo non prova un guard di sicurezza: serve sempre la coppia risorsa-propria
-(controllo positivo, deve riuscire) / risorsa-altrui (il test, deve fallire), con lo stesso identico
-file/dato. Chiusura del collaudo: ripristinare eventuali config modificate, rimuovere fixture e
-allegati di prova, cancellare lo script, e annotare l'esito da qualche parte che sopravvive alla
-sessione (CLAUDE.md o equivalente) — un collaudo non annotato vale come non fatto.
+A negative test alone does not prove a security guard: it always takes the pair own-resource
+(positive control, must succeed) / someone-else's-resource (the test, must fail), on the exact same
+file or record. Closing a test run: restore any config that was changed, remove test fixtures and
+attachments, delete the script, and record the outcome somewhere that outlives the session
+(CLAUDE.md or equivalent) — an unrecorded test run counts as one never done.
 
-## Parte 2 — Come si applica in questo repo
+## Part 2 — How it applies in this repo
 
-**Gestore pacchetti e comandi.** npm. `npm test` esegue in sequenza `test:dates`, `test:insights`,
-`test:verdicts`, `test:rules` (vedi `package.json`); `npm run lint` e `npm run build` sono gli altri
-controlli automatici disponibili. Non esiste CI configurata nel repo (nessuna cartella `.github`):
-questi comandi vanno lanciati a mano prima di considerare un collaudo chiuso.
+**Package manager and commands.** npm. `npm test` runs `test:dates`, `test:insights`,
+`test:verdicts`, `test:rules` in sequence (see `package.json`); `npm run lint` and `npm run build`
+are the other automatic checks available. No CI is configured in the repo (there is no `.github`
+directory): these commands must be run by hand before a test run can count as closed.
 
-**Non esiste una suite E2E autenticata.** Le quattro suite in `tests/` sono unit/integration su
-regole Firestore, date, insights e verdetti — nessuna guida un browser. `playwright` è una
-devDependency usata solo da `scripts/screenshots.mjs`, che apre un browser reale, fa login con
-l'account demo (`demo@chronostep.local` / `chronostep`, sovrascrivibili con `SEED_EMAIL` /
-`SEED_PASSWORD`) contro l'emulatore Auth, e scatta screenshot: non fa assert sui dati. È comunque il
-pattern di riferimento da cui partire per uno script di collaudo — stesso login reale via
-Playwright, ma seguito da una verifica sui dati (vedi sotto) invece che da uno screenshot.
+**There is no authenticated E2E suite.** The four suites in `tests/` are unit/integration tests over
+Firestore rules, dates, insights and verdicts — none of them drives a browser. `playwright` is a
+devDependency used only by `scripts/screenshots.mjs`, which opens a real browser, logs in with the
+demo account (`demo@chronostep.local` / `chronostep`, overridable with `SEED_EMAIL` /
+`SEED_PASSWORD`) against the Auth emulator, and takes screenshots: it asserts nothing about the
+data. It is still the reference pattern to start a test script from — the same real login through
+Playwright, but followed by a check on the data (see below) rather than by a screenshot.
 
-**Ambiente locale isolato.** Emulatori Firebase, non un database di test separato:
+**Isolated local environment.** Firebase emulators, not a separate test database:
 ```bash
 npm run emulators                                  # Auth :9099, Firestore :8080 (firebase.json)
-npm run seed                                       # scripts/seed-emulator.mjs — account + fixture relative a "oggi"
+npm run seed                                       # scripts/seed-emulator.mjs — account + fixtures relative to today
 NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true npm run dev
 ```
-`npm run test:rules` gira su un emulatore Firestore separato, porta 8181 (`firebase.test.json`),
-apposta per poter girare insieme agli emulatori di sviluppo senza conflitto di porta.
+`npm run test:rules` runs on a separate Firestore emulator, port 8181 (`firebase.test.json`),
+deliberately, so it can run alongside the development emulators without a port conflict.
 
-**Identità di prova.** Non esiste un ruolo admin lato client. Per un secondo utente, replicare il
-pattern `ensureUser` di `scripts/seed-emulator.mjs`: `POST` a
-`http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp` (o `:signInWithPassword`
-se l'account esiste già) con `key=fake-api-key`. Per un collaudo a un solo ruolo, riusare l'account
-demo seedato è sufficiente.
+**Test identity.** There is no admin role on the client. For a second user, replicate the
+`ensureUser` pattern in `scripts/seed-emulator.mjs`: `POST` to
+`http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp` (or `:signInWithPassword`
+if the account already exists) with `key=fake-api-key`. For single-role testing, reusing the seeded
+demo account is enough.
 
-**Come si legge indietro lo stato reale.** Non c'è un endpoint REST admin, e la Firestore emulator UI
-è disabilitata di default (`"ui": {"enabled": false}` sia in `firebase.json` sia in
-`firebase.test.json`). Due opzioni, in ordine di preferenza:
-1. Dallo stesso script Node/Playwright usato per il collaudo, interrogare Firestore con l'SDK client
-   (`firebase/firestore`) puntato all'emulatore, con le stesse credenziali dell'utente di prova — lo
-   stesso approccio che `scripts/seed-emulator.mjs` usa per scrivere, applicato a una lettura dopo
-   l'azione da verificare.
-2. Abilitare temporaneamente `"ui": {"enabled": true}` in `firebase.json` per ispezionare a mano
-   durante il collaudo, poi riportarlo a `false` in fase F (ripristino) — è un file tracciato da git.
+**How the real state is read back.** There is no admin REST endpoint, and the Firestore emulator UI
+is disabled by default (`"ui": {"enabled": false}` in both `firebase.json` and
+`firebase.test.json`). Two options, in order of preference:
+1. From the same Node/Playwright script used for the test run, query Firestore with the client SDK
+   (`firebase/firestore`) pointed at the emulator, under the test user's own credentials — the same
+   approach `scripts/seed-emulator.mjs` uses to write, applied to a read after the action being
+   verified.
+2. Temporarily set `"ui": {"enabled": true}` in `firebase.json` to inspect by hand during the test
+   run, then put it back to `false` in phase F (restore) — it is a git-tracked file.
 
-Non leggere lo uid da `localStorage` per un flusso con emulatore: Firebase Auth persiste in
-IndexedDB (già annotato in `AGENTS.md`).
+Do not read the uid out of `localStorage` for an emulator flow: Firebase Auth persists to IndexedDB
+(already noted in `AGENTS.md`).
 
-**Branch.** Predefinito/di integrazione: `main` (`origin/main`). Le convenzioni di naming
-(`feature/…`, `fix/…`, `refactor/…`, `chore/…`) e il formato dei messaggi di commit (Conventional
-Commits) sono già in [DEVELOPMENT_GUIDELINES.md](./DEVELOPMENT_GUIDELINES.md#-git--versioning) — non
-duplicati qui.
+**Branches.** Default/integration: `main` (`origin/main`). The naming conventions (`feature/…`,
+`fix/…`, `refactor/…`, `chore/…`) and the commit message format (Conventional Commits) are already
+in [DEVELOPMENT_GUIDELINES.md](./DEVELOPMENT_GUIDELINES.md#-git--versioning) — not duplicated here.
 
-**Dove annotare l'esito di un collaudo.** Non esiste oggi un posto dedicato. `Draft Release Temp.md`
-accumula solo le note di rilascio visibili all'utente finale, non gli esiti di verifica interna.
-Proposta: una sezione `## Collaudi manuali` in fondo a `CLAUDE.md` (il file caricato
-automaticamente), una riga per collaudo — data, funzionalità, fasi eseguite, esito. Crearla al primo
-collaudo che segue questa regola, se non esiste ancora.
+**Where to record the outcome of a test run.** There is no dedicated place today.
+`Draft Release Temp.md` accumulates only the release notes an end user sees, not internal
+verification outcomes. Proposal: a `## Manual test runs` section at the bottom of `CLAUDE.md` (the
+file that is loaded automatically), one line per run — date, feature, phases executed, outcome.
+Create it at the first test run that follows this rule, if it does not exist yet.
 
-### Cosa manca, oggi, per rispettare pienamente l'obbligo 4
+### What is missing today to honour obligation 4 in full
 
-- Nessuna suite E2E vera: le quattro suite in `tests/` non guidano un browser né un flusso HTTP
-  completo. Il minimo indispensabile sarebbe uno script Playwright riusabile (login emulatore +
-  helper di lettura Firestore) invece di scriverne uno da zero a ogni collaudo.
-- Nessun endpoint di debug/admin per leggere lo stato senza passare dall'SDK client o dalla Firestore
-  emulator UI (disabilitata di default).
-- Nessun posto già esistente per gli esiti dei collaudi manuali: va creato alla bisogna (proposta
-  sopra).
+- No real E2E suite: the four suites in `tests/` drive neither a browser nor a complete HTTP flow.
+  The bare minimum would be a reusable Playwright script (emulator login + a Firestore read helper)
+  instead of writing one from scratch for every test run.
+- No debug/admin endpoint for reading state without going through the client SDK or the Firestore
+  emulator UI (disabled by default).
+- No place that already exists for manual test outcomes: it has to be created as needed (proposal
+  above).

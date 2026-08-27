@@ -13,6 +13,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { formatElapsed } from "../lib/dates";
+import { DEMO_EMAIL, READ_ONLY_MESSAGE } from "../lib/demoAccount";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { useAuth } from "../hooks/useAuth";
 import { useTaskStore } from "../hooks/useTaskStore";
@@ -23,6 +24,7 @@ import ThemeToggle from "./ThemeToggle";
 const NAV_LINKS = [
   { href: "/", label: "Oggi" },
   { href: "/tasks", label: "Task" },
+  { href: "/capture", label: "Cattura" },
   { href: "/timeline", label: "Timeline" },
   { href: "/report", label: "Report" },
   { href: "/insights", label: "Insights" },
@@ -201,8 +203,13 @@ const AuthWall = () => {
 
       {/*
         The demo account is a product decision, not an oversight: the app is meant to be shown to
-        someone. Labelling it as shared is the honest part — anything typed into it is visible to
-        every other visitor, and that is worth saying before someone types a client's name into it.
+        someone. What used to be said here was that anything typed into it is visible to everyone —
+        which was honest, and was also a description of a problem. It is now read-only, enforced in
+        `firestore.rules`, so the sentence changed from a warning into a fact about what it does.
+
+        The address comes from `DEMO_EMAIL` rather than being written twice: it is the same constant
+        the app reads to put itself in read-only mode, and two copies of it would eventually name
+        two different accounts.
       */}
       <aside className="mt-12 border-t border-line pt-6">
         <h2 className="font-mono text-micro uppercase tracking-wider text-ink-muted">
@@ -210,7 +217,7 @@ const AuthWall = () => {
         </h2>
         <p className="mt-2 font-prose text-base text-ink">
           <span data-numeric className="font-mono text-small">
-            admin@example.com
+            {DEMO_EMAIL}
           </span>{" "}
           ·{" "}
           <span data-numeric className="font-mono text-small">
@@ -218,11 +225,39 @@ const AuthWall = () => {
           </span>
         </p>
         <p className="mt-2 font-prose text-tiny text-ink-muted">
-          È condiviso con chiunque abbia questo link: quello che scrivi lì dentro lo vedono tutti, e
-          chiunque può cancellarlo.
+          Si guarda e basta: da questo account non si può creare, modificare né cancellare niente,
+          così quello che c'è dentro resta com'è per chi arriva dopo.
         </p>
       </aside>
     </main>
+  );
+};
+
+// ─── Sola lettura ────────────────────────────────────────────────────────────
+
+/**
+ * The band that says this account may only look.
+ *
+ * In the chrome rather than on a page, for the same reason the running-session bar is: it is true
+ * of the whole application, not of whatever screen happens to be open. It is set in `warn` — the
+ * colour for "this wants your attention" — because it is not an error and nothing is behind; it is
+ * a condition the visitor should know about before they try to change something.
+ */
+const ReadOnlyBand = () => {
+  const { isReadOnly } = useTaskStore();
+  if (!isReadOnly) return null;
+
+  return (
+    <div className="border-b border-line bg-warn-field">
+      <div className="mx-auto w-full max-w-6xl px-6 py-2.5">
+        <p className="font-prose text-base text-ink">
+          {READ_ONLY_MESSAGE}{" "}
+          <span className="text-ink-muted">
+            Le credenziali sono pubbliche, quindi quello che vedi resta com'è per chi arriva dopo.
+          </span>
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -259,8 +294,9 @@ const AppShell = ({ children }: { children: ReactNode }) => {
           </Link>
 
           {/*
-            The nav scrolls sideways on a narrow screen instead of wrapping. Wrapping turned five
-            links into a five-line column and pushed the wordmark away from the account controls.
+            The nav scrolls sideways on a narrow screen instead of wrapping. Wrapping turned the
+            links into a column one line per link tall, and pushed the wordmark away from the
+            account controls.
           */}
           <nav
             aria-label="Sezioni"
@@ -304,6 +340,7 @@ const AppShell = ({ children }: { children: ReactNode }) => {
         </div>
       </header>
 
+      <ReadOnlyBand />
       <RunningSessionBar />
 
       <div className="flex-1">{children}</div>

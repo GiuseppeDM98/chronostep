@@ -9,7 +9,9 @@ Complete guide to setting up ChronoStep for local development.
 3. [Local Development Setup](#local-development-setup)
 4. [Firestore Security Rules Deployment](#firestore-security-rules-deployment)
 5. [Running the Application](#running-the-application)
-6. [Troubleshooting](#troubleshooting)
+6. [Cattura da note (Claude API)](#6-cattura-da-note-claude-api)
+7. [The demo account is read-only](#7-the-demo-account-is-read-only)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -148,6 +150,14 @@ NEXT_PUBLIC_DISABLE_SIGNUPS=true
 NEXT_PUBLIC_SIGNUP_WHITELIST=admin@example.com,team@example.com
 ```
 
+**Optional**: Turn on the Cattura screen, which needs an Anthropic API key. Neither variable is
+`NEXT_PUBLIC_`, so neither reaches the browser — see [section 6](#6-cattura-da-note-claude-api) for
+why the allow list matters:
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+AI_ALLOWED_EMAILS=you@example.com
+```
+
 **Security Warning**: Never commit the `.env` file to version control. It's already in `.gitignore`, but double-check before pushing to GitHub.
 
 ---
@@ -241,7 +251,146 @@ The application is now running at [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 6. Troubleshooting
+## 6. Cattura da note (Claude API)
+
+The **Cattura** screen turns pasted notes into proposed tasks, nested steps and work-log entries.
+It is the only feature in ChronoStep that reaches a server: `/api/ai/capture` holds the Anthropic
+API key, because a key in a browser is a key anyone can read. That route talks to Claude and
+nothing else — it opens no database connection and writes nothing. Every write still happens in the
+client, through the ordinary store, under `firestore.rules`.
+
+The app runs perfectly well without any of this configured; the screen simply reports that the
+feature is off.
+
+### 6.1 Get an Anthropic API key
+
+Create one at [console.anthropic.com](https://console.anthropic.com/) under **API Keys**. Set a
+spend limit on the account while you are there — this endpoint is guarded, but a spend limit is the
+only ceiling that cannot be reasoned around.
+
+### 6.2 Configure it locally
+
+Add to `.env` (never committed — see `.gitignore`):
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+AI_ALLOWED_EMAILS=you@example.com
+```
+
+`AI_ALLOWED_EMAILS` is the list of accounts allowed to spend that key. **Leave it empty and the
+route is open in development and closed in production.** That default is deliberate: the demo
+account's credentials are printed on the sign-in screen, so without a list "any signed-in user"
+means "anyone holding the link", and every request costs real money.
+
+Neither variable is `NEXT_PUBLIC_`, so neither is bundled into the client.
+
+### 6.3 Configure it on Vercel
+
+Project Settings → Environment Variables → add `ANTHROPIC_API_KEY` and `AI_ALLOWED_EMAILS` for the
+environments you want it in, then redeploy. Environment variables are read at build and at runtime,
+so an existing deployment does not pick them up until it is rebuilt.
+
+### 6.4 What travels to Anthropic
+
+Everything in this list, and nothing else:
+
+- the notes you type;
+- for each of your tasks: its title, status, **due date** and document id;
+- for each of their steps: title, status and document id;
+- the tags already in use across your tasks and work log.
+
+The model needs the ids and titles to say "add these steps to *that* task" instead of creating a
+duplicate. Work-log **messages** are not sent, and neither are durations. The hint under the input
+on the Cattura screen says the same thing — if you change what `buildContextPayload` sends, change
+both.
+
+### 6.5 If it does not work
+
+| What the screen says | What it means |
+|---|---|
+| «La Claude API non è configurata su questo ambiente.» | `ANTHROPIC_API_KEY` is unset where the app is running. On Vercel, redeploy after adding it. |
+| «Questo account non è abilitato a usare l'AI.» | The signed-in address is not in `AI_ALLOWED_EMAILS`, or the list is empty and this is production. |
+| «La chiave della Claude API non è valida.» | The key is set but Anthropic rejects it — revoked, mistyped, or from another organisation. |
+| «La sessione è scaduta. Esci e rientra.» | The Firebase ID token was refused. Signing out and back in issues a fresh one. |
+| «Hai fatto molte richieste in un'ora.» | Thirty calls per account per hour, counted per server instance. |
+
+---
+
+## 7. The demo account is read-only
+
+The credentials on the sign-in screen are public, so "the demo account" means "everyone who has the
+link". It can open every screen and read everything, and it cannot create, edit or delete anything.
+
+### 7.1 Where that is enforced
+
+In `firestore.rules`, and nowhere else. `isDemoAccount()` matches the demo address against the
+token's email claim, and `mayWrite()` gates every `create`, `update` and `delete` on all three
+collections. `npm run test:rules` proves it in pairs: each check is the same write, refused for the
+demo account and accepted for a normal one.
+
+The interface also stops offering write controls to that account and explains why in a band across
+the top. That is a courtesy, not the boundary — the interface is JavaScript served to the same
+public, and a hidden button is a suggestion.
+
+### 7.2 The two places the address is written
+
+| Where | What it does |
+|---|---|
+| `isDemoAccount()` in `firestore.rules` | Refuses the writes. This is the control. |
+| `NEXT_PUBLIC_DEMO_EMAIL` | Lets the interface stop offering what the rules will refuse, and fills the address shown on the sign-in screen. |
+
+**They must name the same account.** If they drift, the app offers actions the database then
+rejects, which is the exact failure the arrangement exists to prevent. `NEXT_PUBLIC_DEMO_EMAIL`
+defaults to `admin@example.com` — the address the sign-in screen has always shown — so a deployment
+that never sets it is still correct.
+
+### 7.3 Deploy order, which matters
+
+Once the rules are deployed, **nobody can write to the demo account any more, including you**: there
+is no admin path in this project. So if you want to put sample data in it, do that first.
+
+1. Sign in as the demo account and create whatever should be on display, **or** write it from the
+   Firebase console.
+2. `firebase deploy --only firestore:rules`.
+3. Verify: sign in as the demo account and confirm the band appears and the write controls are gone.
+
+To change that data afterwards, use the Firebase console, or temporarily point `isDemoAccount()` at
+a different address, deploy, edit, and put it back.
+
+### 7.4 Filling it: `scripts/seed-demo.mjs`
+
+Read-only freezes whatever is there. An empty demo account shows empty screens, and Timeline, Report
+and Insights have nothing to say without work logs — which is most of what distinguishes this app.
+
+```bash
+node scripts/seed-demo.mjs --yes --replace
+```
+
+It signs in with the demo credentials and writes a full diary: all four task statuses, all three
+priorities and none, one task overdue and one due today, a task with no steps beside one nested
+three levels deep, steps with their own due dates, start/stop sessions and hand-written notes, notes
+carrying a duration, time attached to specific steps, and six months of history so the trend chart
+and the month-over-month comparison have something to compare. Everything is generated relative to
+today, from a fixed seed, so two runs produce the same demo — and so it ages: re-run it when the
+demo starts looking like a museum.
+
+`--yes` is required and there is no npm alias: it writes to production. `--replace` empties the
+account first. Add `NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true` with `DEMO_EMAIL`/`DEMO_PASSWORD` to
+rehearse it against the emulators, which is worth doing before pointing it at a real project.
+
+### 7.5 Verifying, without breaking anything
+
+A ruleset does not take effect everywhere the moment `firebase deploy` returns: for a while
+afterwards, consecutive requests can be evaluated against different rulesets. So a single pass
+proves nothing, and **a deny rule must never be verified with a destructive operation** — a
+`delete` that lands on the old ruleset really deletes.
+
+Probe with an `update` that touches only `updatedAt`, and repeat until the answer is stable. A
+refused update leaves the document exactly as it was.
+
+---
+
+## 8. Troubleshooting
 
 ### Firebase Authentication Errors
 

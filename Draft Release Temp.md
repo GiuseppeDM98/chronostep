@@ -16,6 +16,7 @@
 
 ## ✨ New Features
 
+- Added **Cattura**, a new section that turns written notes into work. Paste anything — a mail, a list, two lines scribbled in a hurry — and it comes back as tasks with their fields filled in, steps broken out and nested under them, steps attached to a task you already have, and entries for the work log. "Yesterday, two hours on the catalogue review" creates the task *and* files the two hours against it. Nothing is saved until you say so: every proposed line arrives ticked, editable in place, and can be dropped — dropping a step drops what is nested under it. Durations get called out separately, because a note claiming two hours counts in the monthly report exactly like two hours you timed. Needs an Anthropic API key to be configured; without one, or on an account that is not on the allowed list, the section says so plainly and offers nothing to click. The rest of the app is unaffected either way.
 - Added an opening verdict to every screen: a sentence stating how things actually stand, with the figures inside it, in place of a grid of counters. It is computed from your data and will tell you when things are going badly.
 - Added a "what to pick up next" list on the home screen, showing only what is live — overdue first, then due today — each with the time already spent on it.
 - Added a live work-session timer with an HH:MM:SS readout. It starts from any step, follows you across the app, and can be stopped from any page.
@@ -24,7 +25,8 @@
 - Added a calendar heatmap in Insights showing how much you logged on each day of the month.
 - Added a monthly trends section in Insights with total hours, top task and top tag for the last six months.
 - Added the ability to change a step's position among its siblings after creating it, and to move it under a different parent.
-- Added an optional lock on new registrations, with an email whitelist, plus demo account credentials on the sign-in screen so the app can be shown to someone.
+- Added an optional lock on new registrations, with an email whitelist, plus demo account credentials on the sign-in screen so the app can be shown to someone. That account is **read-only**: it opens every screen and reads everything, and cannot create, edit or delete anything, so what one visitor sees is what the next one sees. A band at the top of the app says so, and the write controls are simply absent rather than present and broken.
+- Filled the demo account with a real diary — eleven tasks across every status, steps nested three levels deep, and six months of work log — so that trying the app shows you what it does instead of an empty shell. The home screen opens on something overdue, which is the point: the verdicts are meant to be able to tell you bad news.
 
 ## 🔧 Improvements
 
@@ -72,8 +74,10 @@
 
 - Rewrote the README with screenshots of the app.
 - Added DESIGN.md, recording the visual system, and PRODUCT.md, recording who the product is for and what constrains it.
+- Translated the README and the rest of the project's documentation to English. The repository is public and the docs are read by people who do not speak Italian; the app's own interface stays Italian.
 
 ## 🏗️ Technical
 
 - Added test suites covering the Firestore security rules, date handling across four timezones, work-log aggregation and the verdict rules.
 - Added a local Firebase emulator setup with realistic sample data, so the app can be developed and reviewed without touching real data.
+- Added a fifth test suite covering what is refused out of what the AI proposes, and extended the security-rules suite to prove the demo account cannot write.
