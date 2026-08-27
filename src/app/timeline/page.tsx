@@ -1,102 +1,60 @@
 /**
- * TimelinePage - Chronological work log view
+ * Timeline — the work log, newest first, grouped by day.
  *
- * Displays all work logs grouped by date, sorted newest first.
- * Filters by year, month, and tag.
- * Shows duration between start/stop pairs and associated task/step context.
+ * Grouping and labelling both use the LOCAL day. They used to disagree: logs were bucketed by UTC
+ * day and the heading was formatted from the newest log's local date, so a late-evening session
+ * appeared under a heading naming the following day, contradicting the time printed on its own row.
+ * The day key is also the React key here, which the localized label was not — two groups could
+ * produce the same label and collide.
  */
 "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import AuthGate from "../../components/AuthGate";
+import AppShell from "../../components/AppShell";
+import Verdict from "../../components/Verdict";
+import { ErrorNote, TagList } from "../../components/controls";
 import { useTaskStore } from "../../hooks/useTaskStore";
 import {
-  buildStepsByTask,
-  buildTaskActivity,
-  describePriority,
-  getTaskStepSummary,
-  groupWorkLogsByTag,
-} from "../../lib/insights";
+  aOrAd,
+  formatDayKey,
+  formatInstantTime,
+  formatMinutes,
+  instantDayKey,
+} from "../../lib/dates";
+import { buildTaskActivity, groupWorkLogsByTag } from "../../lib/insights";
+import { readSlice } from "../../lib/verdicts";
 import type { WorkLog } from "../../lib/types";
 
-type GroupedLogs = Array<{
-  dateLabel: string;
-  logs: WorkLog[];
-}>;
-
-const TAG_PREVIEW_LIMIT = 3;
-
-// Format log date with locale-aware day/month labels for section headers.
-// Uses long format for readability: "Monday, January 15, 2024"
-const formatDate = (value: string) => {
-  const date = new Date(value);
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
-
-// Keep time display compact so log rows stay readable on mobile.
-// Uses 24h or 12h format based on user locale.
-const formatTime = (value: string) =>
-  new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-const normalizeTags = (tags: string[]) =>
-  tags.map((tag) => tag.trim()).filter(Boolean);
-
-const MONTH_OPTIONS = [
-  { value: "all", label: "Tutti i mesi" },
-  { value: "1", label: "Gennaio" },
-  { value: "2", label: "Febbraio" },
-  { value: "3", label: "Marzo" },
-  { value: "4", label: "Aprile" },
-  { value: "5", label: "Maggio" },
-  { value: "6", label: "Giugno" },
-  { value: "7", label: "Luglio" },
-  { value: "8", label: "Agosto" },
-  { value: "9", label: "Settembre" },
-  { value: "10", label: "Ottobre" },
-  { value: "11", label: "Novembre" },
-  { value: "12", label: "Dicembre" },
+const MONTHS = [
+  "Gennaio",
+  "Febbraio",
+  "Marzo",
+  "Aprile",
+  "Maggio",
+  "Giugno",
+  "Luglio",
+  "Agosto",
+  "Settembre",
+  "Ottobre",
+  "Novembre",
+  "Dicembre",
 ];
 
-/**
- * TimelinePage - Work log timeline view
- *
- * Groups logs by date, showing task/step context and calculated durations.
- * Provides filters for year, month, and tag.
- */
 const TimelinePage = () => {
-  const { workLogs, tasks, steps, isHydrated } = useTaskStore();
-  const [selectedYear, setSelectedYear] = useState<string>("all");
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
-  const [selectedTag, setSelectedTag] = useState<string>("all");
-  const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);
-  const { logDurations, taskActivity } = useMemo(
-    () => buildTaskActivity(workLogs),
-    [workLogs],
-  );
+  const { workLogs, tasks, steps, isHydrated, loadError, refresh } = useTaskStore();
+  const [year, setYear] = useState("tutti");
+  const [month, setMonth] = useState("tutti");
+  const [tag, setTag] = useState("tutti");
+
+  const { logDurations } = useMemo(() => buildTaskActivity(workLogs), [workLogs]);
   const logsByTag = useMemo(() => groupWorkLogsByTag(workLogs), [workLogs]);
-
-  const taskLookup = useMemo(() => {
-    const map = new Map(tasks.map((task) => [task.id, task.title]));
-    return map;
-  }, [tasks]);
-
-  const stepLookup = useMemo(() => {
-    const map = new Map(steps.map((step) => [step.id, step.title]));
-    return map;
-  }, [steps]);
+  const taskTitles = useMemo(() => new Map(tasks.map((task) => [task.id, task.title])), [tasks]);
+  const stepTitles = useMemo(() => new Map(steps.map((step) => [step.id, step.title])), [steps]);
 
   const availableYears = useMemo(() => {
-    const set = new Set<number>();
-    workLogs.forEach((log) => {
-      set.add(new Date(log.timestamp).getFullYear());
-    });
-    return Array.from(set).sort((a, b) => b - a);
+    const years = new Set(workLogs.map((log) => instantDayKey(log.timestamp).slice(0, 4)));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [workLogs]);
 
   const availableTags = useMemo(
@@ -104,206 +62,208 @@ const TimelinePage = () => {
     [logsByTag],
   );
 
-  const groupedLogs: GroupedLogs = useMemo(() => {
-    const tagFilteredLogs =
-      selectedTag === "all" ? workLogs : logsByTag.get(selectedTag) ?? [];
-    const logs = tagFilteredLogs
-      .filter((log) => {
-        const date = new Date(log.timestamp);
-        const yearPass =
-          selectedYear === "all" || date.getFullYear().toString() === selectedYear;
-        const monthPass =
-          selectedMonth === "all" || (date.getMonth() + 1).toString() === selectedMonth;
-        return yearPass && monthPass;
-      })
-      // Sort newest first so the timeline reads top-down by recency.
-      .sort(
-        (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
-      );
-
-    const groups = new Map<string, typeof logs>();
-    logs.forEach((log) => {
-      // Group logs by date key (YYYY-MM-DD) for timeline sections.
-      // .slice(0, 10) extracts date portion to group logs from same day.
-      const dateKey = new Date(log.timestamp).toISOString().slice(0, 10);
-      if (!groups.has(dateKey)) {
-        groups.set(dateKey, []);
-      }
-      groups.get(dateKey)!.push(log);
+  const scopedLogs = useMemo(() => {
+    const base = tag === "tutti" ? workLogs : logsByTag.get(tag) ?? [];
+    return base.filter((log) => {
+      const dayKey = instantDayKey(log.timestamp);
+      const yearPass = year === "tutti" || dayKey.slice(0, 4) === year;
+      const monthPass = month === "tutti" || dayKey.slice(5, 7) === month;
+      return yearPass && monthPass;
     });
+  }, [logsByTag, month, tag, workLogs, year]);
 
-    const sortedGroups = Array.from(groups.entries())
-      .sort(([a], [b]) => (a < b ? 1 : -1))
-      .map(([dateKey, logsForDay]) => ({
-        dateLabel: formatDate(logsForDay[0].timestamp),
-        logs: logsForDay,
+  /** Groups are keyed by the day key itself — stable, unique, and sortable as a string. */
+  const groups = useMemo(() => {
+    const byDay = new Map<string, WorkLog[]>();
+    scopedLogs.forEach((log) => {
+      const dayKey = instantDayKey(log.timestamp);
+      const bucket = byDay.get(dayKey) ?? [];
+      bucket.push(log);
+      byDay.set(dayKey, bucket);
+    });
+    return Array.from(byDay.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([dayKey, logs]) => ({
+        dayKey,
+        logs: [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+        minutes: logs.reduce((sum, log) => sum + (logDurations.get(log.id) ?? 0), 0),
       }));
-    return sortedGroups;
-  }, [logsByTag, selectedMonth, selectedTag, selectedYear, workLogs]);
+  }, [logDurations, scopedLogs]);
+
+  const scopeLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (month !== "tutti") {
+      const monthName = MONTHS[Number(month) - 1].toLowerCase();
+      parts.push(`${aOrAd(monthName)} ${monthName}`);
+    }
+    if (year !== "tutti") parts.push(`nel ${year}`);
+    if (tag !== "tutti") parts.push(`su #${tag}`);
+    return parts.length > 0 ? parts.join(" ") : "in tutto";
+  }, [month, tag, year]);
+
+  const verdict = useMemo(
+    () => readSlice(workLogs, scopedLogs, scopeLabel),
+    [scopeLabel, scopedLogs, workLogs],
+  );
+
+  const filterClasses =
+    "border border-line bg-panel px-2 py-1.5 font-mono text-tiny text-ink";
 
   return (
-    <AuthGate>
-      <main className="mx-auto w-full max-w-4xl p-6">
-      <header className="mb-6 space-y-3">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-slate-400"
-        >
-          ← Torna alla Home
-        </Link>
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Chronostep</p>
-          <h1 className="text-3xl font-bold text-slate-900">Timeline</h1>
-          <p className="text-sm text-slate-500">Registro cronologico delle attività più recenti.</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-          <p className="font-semibold text-slate-900">Tag: perché usarli</p>
-          <p className="mt-1 text-sm text-slate-600">
-            Aggiungi tag come cliente, progetto o tipo lavoro per filtrare rapidamente i log.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <select
-            value={selectedYear}
-            onChange={(event) => setSelectedYear(event.target.value)}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-          >
-            <option value="all">Tutti gli anni</option>
-            {availableYears.map((year) => (
-              <option key={year} value={year.toString()}>
-                {year}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-          >
-            {MONTH_OPTIONS.map((month) => (
-              <option key={month.value} value={month.value}>
-                {month.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedTag}
-            onChange={(event) => setSelectedTag(event.target.value)}
-            className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-            disabled={availableTags.length === 0}
-          >
-            <option value="all">Tutti i tag</option>
-            {availableTags.length === 0 ? (
-              <option value="" disabled>
-                Nessun tag
-              </option>
-            ) : (
-              availableTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-      </header>
+    <AppShell>
+      <main className="mx-auto w-full max-w-4xl px-6 py-10">
+        {loadError ? (
+          <div className="mb-8">
+            <ErrorNote onRetry={() => void refresh()}>
+              Non sono riuscito a leggere il registro.
+            </ErrorNote>
+          </div>
+        ) : null}
 
-      {!isHydrated ? (
-        <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-          Caricamento dati locali…
-        </div>
-      ) : groupedLogs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-          Nessun log registrato. Crea il tuo primo WorkLog dalla pagina di un task.
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {groupedLogs.map((group) => (
-            <section key={group.dateLabel}>
-              <h2 className="text-sm font-semibold uppercase text-slate-500">{group.dateLabel}</h2>
-              <ol className="mt-3 space-y-3">
-                {group.logs.map((log) => {
-                  const progress = getTaskStepSummary(stepsByTask, log.taskId);
-                  const durationMinutes = logDurations.get(log.id);
-                  const activity = taskActivity.get(log.taskId);
-                  const tags = normalizeTags(log.tags);
-                  const visibleTags = tags.slice(0, TAG_PREVIEW_LIMIT);
-                  const overflowCount = Math.max(0, tags.length - visibleTags.length);
-                  return (
-                    <li
-                      key={log.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
+        {!isHydrated ? (
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">Leggo i dati…</p>
+        ) : (
+          <>
+            <Verdict verdict={verdict}>
+              <div className="flex flex-wrap items-center gap-3">
+                <label htmlFor="filtro-anno" className="sr-only">
+                  Anno
+                </label>
+                <select
+                  id="filtro-anno"
+                  value={year}
+                  onChange={(event) => setYear(event.target.value)}
+                  className={filterClasses}
+                >
+                  <option value="tutti">Tutti gli anni</option>
+                  {availableYears.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="filtro-mese" className="sr-only">
+                  Mese
+                </label>
+                <select
+                  id="filtro-mese"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                  className={filterClasses}
+                >
+                  <option value="tutti">Tutti i mesi</option>
+                  {MONTHS.map((label, index) => (
+                    <option key={label} value={String(index + 1).padStart(2, "0")}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="filtro-tag" className="sr-only">
+                  Tag
+                </label>
+                <select
+                  id="filtro-tag"
+                  value={tag}
+                  onChange={(event) => setTag(event.target.value)}
+                  disabled={availableTags.length === 0}
+                  className={`${filterClasses} disabled:opacity-50`}
+                >
+                  <option value="tutti">Tutti i tag</option>
+                  {availableTags.map((value) => (
+                    <option key={value} value={value}>
+                      #{value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Verdict>
+
+            <div className="mt-10 flex flex-col gap-10">
+              {groups.map((group) => (
+                <section key={group.dayKey} aria-labelledby={`giorno-${group.dayKey}`}>
+                  <div className="flex items-baseline justify-between gap-4 border-b border-line pb-2">
+                    <h2
+                      id={`giorno-${group.dayKey}`}
+                      className="font-mono text-micro uppercase tracking-wider text-ink-muted"
                     >
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">
-                              {taskLookup.get(log.taskId) ?? "Task sconosciuto"}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {log.type.toUpperCase()} • {formatTime(log.timestamp)}
-                              {log.stepId
-                                ? ` • Step: ${stepLookup.get(log.stepId) ?? log.stepId}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div className="text-right text-xs text-slate-500">
-                            <p>{new Date(log.timestamp).toLocaleTimeString()}</p>
-                            <p>{describePriority(tasks.find((task) => task.id === log.taskId)?.priority)}</p>
-                          </div>
-                        </div>
-                        {log.message ? (
-                          <p className="text-sm text-slate-700">{log.message}</p>
-                        ) : null}
-                        {visibleTags.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                            {visibleTags.map((tag) => (
-                              <span
-                                key={`${log.id}-tag-${tag}`}
-                                className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
-                              >
-                                #{tag}
-                              </span>
-                            ))}
-                            {overflowCount > 0 ? (
-                              <span className="rounded-full bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
-                                +{overflowCount}
+                      {formatDayKey(group.dayKey, {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </h2>
+                    {group.minutes > 0 ? (
+                      <span data-numeric className="font-mono text-tiny font-medium text-ink">
+                        {formatMinutes(group.minutes)}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <ol>
+                    {group.logs.map((log) => {
+                      const minutes = logDurations.get(log.id);
+                      return (
+                        <li
+                          key={log.id}
+                          className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line py-3"
+                        >
+                          <time
+                            dateTime={log.timestamp}
+                            data-numeric
+                            className="w-12 shrink-0 font-mono text-tiny text-ink-muted"
+                          >
+                            {formatInstantTime(log.timestamp)}
+                          </time>
+                          <div className="min-w-0 flex-1">
+                            <Link
+                              href={`/tasks/${log.taskId}`}
+                              className="font-prose text-base text-ink no-underline hover:underline"
+                            >
+                              {taskTitles.get(log.taskId) ?? "Task eliminato"}
+                            </Link>
+                            {log.stepId ? (
+                              <span className="ml-2 font-mono text-tiny text-ink-muted">
+                                su {stepTitles.get(log.stepId) ?? "step eliminato"}
                               </span>
                             ) : null}
+                            {log.message ? (
+                              <p className="mt-0.5 max-w-measure font-prose text-base text-ink-muted">
+                                {log.message}
+                              </p>
+                            ) : null}
+                            {log.tags.length > 0 ? (
+                              <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+                                <TagList tags={log.tags} limit={5} />
+                                {/* Back into the Insights drilldown, filtered by this log's first tag. */}
+                                <Link
+                                  href={`/insights?tag=${encodeURIComponent(log.tags[0])}`}
+                                  className="font-mono text-micro uppercase tracking-wider text-ink-muted no-underline hover:text-ink"
+                                >
+                                  Vedi in Insights
+                                </Link>
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                          <span className="font-semibold">
-                            Progress {progress.done}/{progress.total}
-                          </span>
-                          {durationMinutes ? (
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">
-                              {durationMinutes} min
-                            </span>
-                          ) : null}
-                          {activity?.lastLogTimestamp === log.timestamp ? (
-                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
-                              Ultimo aggiornamento
-                            </span>
-                          ) : null}
-                          <Link
-                            href={`/insights?task=${encodeURIComponent(log.taskId)}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 font-semibold text-slate-700 transition hover:border-slate-400"
+                          <span
+                            data-numeric
+                            className="w-16 shrink-0 text-right font-mono text-tiny text-ink"
                           >
-                            Vai a Insights
-                          </Link>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
-          ))}
-        </div>
-      )}
-    </main>
-    </AuthGate>
+                            {minutes ? formatMinutes(minutes) : ""}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </section>
+              ))}
+            </div>
+          </>
+        )}
+      </main>
+    </AppShell>
   );
 };
 

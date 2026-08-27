@@ -1,1019 +1,697 @@
 /**
- * InsightsPage - Dashboard with upcoming tasks, activity, and calendar
+ * Insights — where the month goes.
  *
- * Features:
- * - Upcoming tasks within configurable window (default 14 days)
- * - Recent activity from last N days (default 3 days)
- * - Interactive monthly calendar with task due dates
- * - Priority and tag summaries
+ * The calendar and the trend figures are built from the same local-day buckets, so the two panels
+ * add up to the same total. They used to disagree: the heatmap grouped by UTC day while the trends
+ * grouped by local month, which shifted late-evening work onto the next day and, at a month
+ * boundary, out of the month entirely.
  *
- * Calendar uses UTC date keys to avoid timezone-based date shifts.
+ * There is no KPI row on this page. Every figure worth stating is already in the opening paragraph,
+ * and repeating it in a tile would be the dashboard this design refuses.
+ *
+ * The priority and tag rows are a drilldown, not a readout: picking one filters the tasks, steps and
+ * work logs underneath, in place. The selection lives in the query string so a view can be linked to
+ * and survives a reload.
  */
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AuthGate from "../../components/AuthGate";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import AppShell from "../../components/AppShell";
+import Verdict from "../../components/Verdict";
+import { ErrorNote } from "../../components/controls";
+import { useNow } from "../../hooks/useNow";
 import { useTaskStore } from "../../hooks/useTaskStore";
 import {
-  buildStepsByTask,
-  buildTaskActivity,
-  buildDailyWorkLogTotals,
-  buildMonthlyTrends,
-  describePriority,
-  getTaskStepSummary,
-} from "../../lib/insights";
-import type { Task } from "../../lib/types";
+  daysBetweenKeys,
+  daysUntilDue,
+  formatDayKey,
+  formatInstantTime,
+  formatMinutes,
+  formatMonthKey,
+  instantDayKey,
+  todayKey,
+} from "../../lib/dates";
+import { buildDailyWorkLogTotals, buildTaskActivity, buildMonthlyTrends } from "../../lib/insights";
+import { readInsights } from "../../lib/verdicts";
+import type { Step, Task, WorkLog } from "../../lib/types";
 
-const UPCOMING_WINDOW_DAYS = 14;
-const RECENT_ACTIVITY_DAYS = 3;
+const WEEKDAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+const PRIORITY_LABELS: Record<string, string> = {
+  high: "Alta",
+  medium: "Media",
+  low: "Bassa",
+  none: "Nessuna",
+};
+const PRIORITY_ORDER = ["high", "medium", "low", "none"] as const;
 
-const formatShortDate = (iso?: string) => {
-  if (!iso) return "Nessuna data";
-  return new Date(iso).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+/** Days of `monthKey` laid out Monday-first, plus the blanks that pad the first week. */
+const buildMonthGrid = (monthKey: string) => {
+  const [year, month] = monthKey.split("-").map(Number);
+  const firstOfMonth = new Date(year, month - 1, 1);
+  // getDay() is Sunday=0; shift so Monday is 0, matching the Italian week.
+  const startOffset = (firstOfMonth.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const cells: Array<{ key: string; dayKey?: string; label?: string }> = [];
+  for (let index = 0; index < startOffset; index += 1) {
+    cells.push({ key: `vuoto-${index}` });
+  }
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dayKey = `${monthKey}-${String(day).padStart(2, "0")}`;
+    cells.push({ key: dayKey, dayKey, label: String(day) });
+  }
+  return cells;
 };
 
-const formatFullDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
-// Format minutes into compact hours/minutes label for summary cards.
-const formatMinutesAsHours = (totalMinutes: number) => {
-  const rounded = Math.max(0, Math.round(totalMinutes));
-  const hours = Math.floor(rounded / 60);
-  const minutes = rounded % 60;
-  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
+const shiftMonth = (monthKey: string, delta: number) => {
+  const [year, month] = monthKey.split("-").map(Number);
+  const shifted = new Date(year, month - 1 + delta, 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
 };
 
-const daysBetween = (target: Date, from: Date) =>
-  Math.ceil((target.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
-
-const monthLabel = (year: number, month: number) =>
-  new Date(year, month).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-
-const getHeatmapStyles = (minutes: number, maxMinutes: number) => {
-  if (minutes <= 0 || maxMinutes <= 0) {
-    return { bgClass: "bg-white", textClass: "text-slate-400" };
-  }
-  const ratio = minutes / maxMinutes;
-  if (ratio <= 0.25) {
-    return { bgClass: "bg-emerald-50", textClass: "text-emerald-700" };
-  }
-  if (ratio <= 0.5) {
-    return { bgClass: "bg-emerald-100", textClass: "text-emerald-800" };
-  }
-  if (ratio <= 0.75) {
-    return { bgClass: "bg-emerald-200", textClass: "text-emerald-900" };
-  }
-  return { bgClass: "bg-emerald-300", textClass: "text-emerald-950" };
-};
-
-type FocusState =
-  | { type: "tag"; value: string }
-  | { type: "priority"; value: Task["priority"] | "none" }
+/** What the drilldown is currently filtered by, read from the query string. */
+type Focus =
+  | { kind: "priority"; value: string }
+  | { kind: "tag"; value: string }
   | null;
 
-const PRIORITY_LEVELS: Array<Task["priority"] | "none"> = [
-  "high",
-  "medium",
-  "low",
-  "none",
-];
-
-const getFocusFromParams = (searchParams: ReturnType<typeof useSearchParams>): FocusState => {
-  const tag = searchParams.get("tag")?.trim();
-  // Tag wins when both params are present to keep the focus consistent and explicit.
-  if (tag) return { type: "tag", value: tag };
-
-  const priority = searchParams.get("priority")?.trim() as Task["priority"] | "none" | undefined;
-  if (priority && PRIORITY_LEVELS.includes(priority)) {
-    return { type: "priority", value: priority };
-  }
-
-  return null;
-};
-
-/**
- * Build calendar grid aligned to Monday (Italian week layout).
- *
- * Bucketing logic:
- * - Tasks are grouped by UTC date keys (YYYY-MM-DD via .slice(0, 10))
- * - JS Date.getDay() returns Sunday=0, so we shift by 6 to make Monday=0
- * - startOffset pads empty cells before the 1st of the month
- * - totalCells rounds up to complete the last week
- *
- * Why UTC keys:
- * A task due "2024-01-15" should display on Jan 15 in the calendar
- * regardless of user timezone. Using UTC midnight prevents shifts.
- *
- * @param year - Calendar year
- * @param month - Calendar month (0-indexed, JS Date convention)
- * @param tasks - Tasks to bucket by due date
- * @returns Array of calendar day cells with task assignments
- */
-const buildCalendarDays = (year: number, month: number, tasks: Task[]) => {
-  const startOfMonth = new Date(year, month, 1);
-  // Shift JS Sunday=0 to Monday=0 so the grid aligns with Italian week layout.
-  const startOffset = (startOfMonth.getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
-
-  const tasksByDate = new Map<string, Task[]>();
-  tasks.forEach((task) => {
-    if (!task.dueDate) return;
-    const due = new Date(task.dueDate);
-    if (due.getFullYear() !== year || due.getMonth() !== month) return;
-    // Extract UTC date key (YYYY-MM-DD) via .slice(0, 10) on ISO timestamp.
-    // Ensures date-based grouping/comparison works across timezones.
-    const key = due.toISOString().slice(0, 10);
-    const bucket = tasksByDate.get(key) ?? [];
-    bucket.push(task);
-    tasksByDate.set(key, bucket);
-  });
-
-  const days: Array<{ key: string; label: string; tasks: Task[]; isCurrentMonth: boolean }> = [];
-  for (let cell = 0; cell < totalCells; cell += 1) {
-    const dayOfMonth = cell - startOffset + 1;
-    if (dayOfMonth < 1 || dayOfMonth > daysInMonth) {
-      days.push({ key: `blank-${cell}`, label: "", tasks: [], isCurrentMonth: false });
-    } else {
-      // Extract UTC date key (YYYY-MM-DD) via .slice(0, 10) on ISO timestamp.
-      // Ensures date-based grouping/comparison works across timezones.
-      const iso = new Date(Date.UTC(year, month, dayOfMonth)).toISOString().slice(0, 10);
-      days.push({
-        key: iso,
-        label: dayOfMonth.toString(),
-        tasks: tasksByDate.get(iso) ?? [],
-        isCurrentMonth: true,
-      });
-    }
-  }
-
-  return days;
-};
-
-/**
- * InsightsPageContent - Main insights dashboard content
- *
- * Wrapped in Suspense by parent to handle search params.
- * Renders upcoming tasks, recent activity, calendar, and summaries.
- */
 const InsightsPageContent = () => {
-  const { tasks, steps, workLogs, isHydrated } = useTaskStore();
-  const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);
-  const { taskActivity, logDurations } = useMemo(
-    () => buildTaskActivity(workLogs),
-    [workLogs],
-  );
-  const today = useMemo(() => new Date(), []);
-  const [calendarState, setCalendarState] = useState({
-    year: today.getFullYear(),
-    month: today.getMonth(),
-  });
-  const { year: calendarYear, month: calendarMonth } = calendarState;
-  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+  const { tasks, steps, workLogs, isHydrated, loadError, refresh } = useTaskStore();
+  const now = useNow();
+  const today = todayKey(now);
+
+  const [monthKey, setMonthKey] = useState(today.slice(0, 7));
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
   const searchParams = useSearchParams();
   const router = useRouter();
-  const focusedTaskId = searchParams.get("task");
-  const focusedTask = tasks.find((task) => task.id === focusedTaskId);
-  const focusedTaskActivity = focusedTask ? taskActivity.get(focusedTask.id) : undefined;
-  const focusState = useMemo(() => getFocusFromParams(searchParams), [searchParams]);
 
-  const setFocusParams = (next: { tag?: string | null; priority?: Task["priority"] | "none" | null }) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (next.tag) {
-      params.set("tag", next.tag);
-    } else {
-      params.delete("tag");
+  const focus: Focus = useMemo(() => {
+    const tag = searchParams.get("tag")?.trim();
+    if (tag) return { kind: "tag", value: tag };
+    const priority = searchParams.get("priorita")?.trim();
+    if (priority && PRIORITY_ORDER.includes(priority as (typeof PRIORITY_ORDER)[number])) {
+      return { kind: "priority", value: priority };
     }
-    if (next.priority) {
-      params.set("priority", next.priority);
-    } else {
-      params.delete("priority");
-    }
-    const query = params.toString();
-    router.replace(query ? `/insights?${query}` : "/insights", { scroll: false });
-  };
+    return null;
+  }, [searchParams]);
 
-  const activeTasks = useMemo(
-    () => tasks.filter((task) => task.status !== "done"),
-    [tasks],
+  // Selecting the row that is already selected clears it, so the same control is the way out.
+  const setFocus = useCallback(
+    (next: Focus) => {
+      const params = new URLSearchParams();
+      if (next?.kind === "tag") params.set("tag", next.value);
+      if (next?.kind === "priority") params.set("priorita", next.value);
+      const query = params.toString();
+      router.replace(query ? `/insights?${query}` : "/insights", { scroll: false });
+    },
+    [router],
   );
 
-  const upcomingTasks = useMemo(() => {
-    return activeTasks
-      .filter((task) => {
-        if (!task.dueDate) return false;
-        const due = new Date(task.dueDate);
-        // Keep a short horizon to focus the "next steps" list on imminent deadlines.
-        return daysBetween(due, today) <= UPCOMING_WINDOW_DAYS;
-      })
-      .sort((a, b) => {
-        const dueA = new Date(a.dueDate ?? 0).valueOf();
-        const dueB = new Date(b.dueDate ?? 0).valueOf();
-        return dueA - dueB;
-      });
-  }, [activeTasks, today]);
-
-  const recentTasks = useMemo(() => {
-    const threshold = new Date(today);
-    // Use a rolling window of recent activity instead of calendar weeks.
-    threshold.setDate(today.getDate() - RECENT_ACTIVITY_DAYS);
-    return activeTasks
-      .filter((task) => {
-        const lastLog = taskActivity.get(task.id)?.lastLogTimestamp;
-        if (!lastLog) return false;
-        return new Date(lastLog) >= threshold;
-      })
-      .sort((a, b) => {
-        const lastA = taskActivity.get(a.id)?.lastLogTimestamp ?? "";
-        const lastB = taskActivity.get(b.id)?.lastLogTimestamp ?? "";
-        return new Date(lastB).valueOf() - new Date(lastA).valueOf();
-      });
-  }, [activeTasks, taskActivity, today]);
-
-  const priorityStats = useMemo(() => {
-    return PRIORITY_LEVELS.map((level) => {
-      const bucket = activeTasks.filter(
-        (task) => (task.priority ?? "none") === level,
-      );
-      const summary = bucket.reduce(
-        (acc, task) => {
-          const stepsSummary = getTaskStepSummary(stepsByTask, task.id);
-          const activity = taskActivity.get(task.id);
-          acc.tasks += 1;
-          acc.totalSteps += stepsSummary.total;
-          acc.doneSteps += stepsSummary.done;
-          acc.minutes += activity?.totalMinutes ?? 0;
-          return acc;
-        },
-        { tasks: 0, totalSteps: 0, doneSteps: 0, minutes: 0 },
-      );
-      return { level, ...summary };
-    });
-  }, [stepsByTask, taskActivity, activeTasks]);
-
-  const maxPriorityMinutes = Math.max(...priorityStats.map((item) => item.minutes), 1);
-
-  const tagStats = useMemo(() => {
-    const map = new Map<
-      string,
-      { tasks: number; totalSteps: number; doneSteps: number; minutes: number }
-    >();
-    tasks.forEach((task) => {
-      if (!task.tags) return;
-      const stepsSummary = getTaskStepSummary(stepsByTask, task.id);
-      const activity = taskActivity.get(task.id);
-      task.tags.forEach((tag) => {
-        const entry = map.get(tag) ?? { tasks: 0, totalSteps: 0, doneSteps: 0, minutes: 0 };
-        entry.tasks += 1;
-        entry.totalSteps += stepsSummary.total;
-        entry.doneSteps += stepsSummary.done;
-        entry.minutes += activity?.totalMinutes ?? 0;
-        map.set(tag, entry);
-      });
-    });
-    return Array.from(map.entries())
-      .map(([tag, stats]) => ({ tag, ...stats }))
-      .sort((a, b) => b.minutes - a.minutes || b.tasks - a.tasks)
-      .slice(0, 6);
-  }, [stepsByTask, taskActivity, tasks]);
-
-  const monthlyTrendsMap = useMemo(() => buildMonthlyTrends(workLogs), [workLogs]);
-  const trendMonths = useMemo(() => {
-    const months: string[] = [];
-    for (let offset = 0; offset < 6; offset += 1) {
-      const date = new Date(today.getFullYear(), today.getMonth() - offset, 1);
-      months.push(
-        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
-      );
-    }
-    return months;
-  }, [today]);
-  const trendEntries = useMemo(
-    () =>
-      trendMonths.map((monthKey) => {
-        return (
-          monthlyTrendsMap.get(monthKey) ?? {
-            monthKey,
-            totalMinutes: 0,
-            topTaskId: undefined,
-            topTaskMinutes: 0,
-            topTag: undefined,
-            topTagMinutes: 0,
-          }
-        );
-      }),
-    [monthlyTrendsMap, trendMonths],
-  );
-  const hasTrendData = useMemo(
-    () => trendEntries.some((entry) => entry.totalMinutes > 0),
-    [trendEntries],
-  );
-
-  const taskTitleById = useMemo(
-    () => new Map(tasks.map((task) => [task.id, task.title])),
-    [tasks],
-  );
-  const stepTitleById = useMemo(
-    () => new Map(steps.map((step) => [step.id, step.title])),
-    [steps],
-  );
-
-  const focusTasks = useMemo(() => {
-    if (!focusState) return [];
-    if (focusState.type === "priority") {
-      return activeTasks.filter(
-        (task) => (task.priority ?? "none") === focusState.value,
-      );
-    }
-    return tasks.filter((task) => task.tags?.includes(focusState.value));
-  }, [activeTasks, focusState, tasks]);
-
-  const focusTaskIds = useMemo(
-    () => new Set(focusTasks.map((task) => task.id)),
-    [focusTasks],
-  );
-
-  const focusSteps = useMemo(() => {
-    if (!focusState) return [];
-    return steps
-      .filter((step) => focusTaskIds.has(step.taskId))
-      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
-  }, [focusState, focusTaskIds, steps]);
-
-  const focusLogs = useMemo(() => {
-    if (!focusState) return [];
-    const filtered =
-      focusState.type === "priority"
-        ? workLogs.filter((log) => focusTaskIds.has(log.taskId))
-        : workLogs.filter((log) => log.tags.includes(focusState.value));
-    return filtered.sort(
-      (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
-    );
-  }, [focusState, focusTaskIds, workLogs]);
-
-  const focusLabel = useMemo(() => {
-    if (!focusState) return "";
-    if (focusState.type === "priority") {
-      return `Dettaglio priorità: ${describePriority(
-        focusState.value === "none" ? undefined : focusState.value,
-      )}`;
-    }
-    return `Dettaglio tag: #${focusState.value}`;
-  }, [focusState]);
-
-  const calendarDays = useMemo(
-    () => buildCalendarDays(calendarYear, calendarMonth, tasks),
-    [calendarMonth, calendarYear, tasks],
-  );
-  const dailyMinutesByDate = useMemo(
+  const reading = useMemo(() => readInsights({ workLogs, now }), [workLogs, now]);
+  const { logDurations, taskActivity } = useMemo(() => buildTaskActivity(workLogs), [workLogs]);
+  const minutesByDay = useMemo(
     () => buildDailyWorkLogTotals(workLogs, logDurations),
     [logDurations, workLogs],
   );
-  const monthlyMinutesByDate = useMemo(() => {
-    const monthKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}`;
-    const filtered = new Map<string, number>();
-    dailyMinutesByDate.forEach((minutes, dateKey) => {
-      if (dateKey.startsWith(monthKey)) {
-        filtered.set(dateKey, minutes);
-      }
+  const trends = useMemo(() => buildMonthlyTrends(workLogs), [workLogs]);
+
+  const grid = useMemo(() => buildMonthGrid(monthKey), [monthKey]);
+  const peakOfMonth = useMemo(() => {
+    let peak = 0;
+    minutesByDay.forEach((minutes, dayKey) => {
+      if (dayKey.startsWith(monthKey) && minutes > peak) peak = minutes;
     });
-    return filtered;
-  }, [calendarMonth, calendarYear, dailyMinutesByDate]);
-  const maxMonthlyMinutes = useMemo(() => {
-    const values = Array.from(monthlyMinutesByDate.values());
-    return values.length > 0 ? Math.max(...values) : 0;
-  }, [monthlyMinutesByDate]);
-  useEffect(() => {
-    if (selectedDayKey && calendarDays.some((day) => day.key === selectedDayKey)) {
-      return;
-    }
-    // Auto-focus the first day with tasks so the detail panel is never empty on load.
-    const firstWithTasks = calendarDays.find(
-      (day) => day.isCurrentMonth && day.tasks.length > 0,
-    );
-    setSelectedDayKey(firstWithTasks?.key ?? null);
-  }, [calendarDays, selectedDayKey]);
-  const selectedDayInfo = useMemo(
-    () => calendarDays.find((day) => day.key === selectedDayKey),
-    [calendarDays, selectedDayKey],
+    return peak;
+  }, [minutesByDay, monthKey]);
+
+  const activeTasks = useMemo(() => tasks.filter((task) => task.status !== "done"), [tasks]);
+
+  /** Upcoming work, bounded at both ends: overdue items belong on Oggi, not in a "what's next" list. */
+  const upcoming = useMemo(
+    () =>
+      activeTasks
+        .filter((task) => {
+          if (!task.dueDate) return false;
+          const days = daysUntilDue(task.dueDate, now);
+          return days >= 0 && days <= 21;
+        })
+        .sort((a, b) => (a.dueDate as string).localeCompare(b.dueDate as string))
+        .slice(0, 6),
+    [activeTasks, now],
   );
 
-  const changeMonth = (direction: "next" | "prev") => {
-    setCalendarState(({ year, month }) => {
-      if (direction === "next") {
-        if (month === 11) {
-          return { year: year + 1, month: 0 };
-        }
-        return { year, month: month + 1 };
-      }
-      if (month === 0) {
-        return { year: year - 1, month: 11 };
-      }
-      return { year, month: month - 1 };
-    });
-  };
+  const priorityLoad = useMemo(
+    () =>
+      PRIORITY_ORDER.map((level) => {
+        const bucket = activeTasks.filter((task) => (task.priority ?? "none") === level);
+        const minutes = bucket.reduce(
+          (sum, task) => sum + (taskActivity.get(task.id)?.totalMinutes ?? 0),
+          0,
+        );
+        return { level, tasks: bucket.length, minutes };
+      }).filter((row) => row.tasks > 0),
+    [activeTasks, taskActivity],
+  );
+  const maxPriorityMinutes = Math.max(1, ...priorityLoad.map((row) => row.minutes));
 
-  const formatMonthLabel = (monthKey: string) => {
-    const [year, month] = monthKey.split("-").map(Number);
-    return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
-      month: "long",
-      year: "numeric",
+  const tagLoad = useMemo(() => {
+    const minutesByTag = new Map<string, number>();
+    workLogs.forEach((log) => {
+      const minutes = logDurations.get(log.id);
+      if (!minutes) return;
+      new Set(log.tags.map((tag) => tag.trim()).filter(Boolean)).forEach((tag) => {
+        minutesByTag.set(tag, (minutesByTag.get(tag) ?? 0) + minutes);
+      });
     });
-  };
+    return Array.from(minutesByTag.entries())
+      .map(([tag, minutes]) => ({ tag, minutes }))
+      .sort((a, b) => b.minutes - a.minutes)
+      .slice(0, 6);
+  }, [logDurations, workLogs]);
+  const maxTagMinutes = Math.max(1, ...tagLoad.map((row) => row.minutes));
+
+  const recentMonths = useMemo(() => {
+    const months: string[] = [];
+    for (let offset = 5; offset >= 0; offset -= 1) months.push(shiftMonth(today.slice(0, 7), -offset));
+    return months;
+  }, [today]);
+  const maxMonthMinutes = Math.max(
+    1,
+    ...recentMonths.map((key) => trends.get(key)?.totalMinutes ?? 0),
+  );
+
+  const focusResult = useMemo(() => {
+    if (!focus) return null;
+
+    // The drilldown must list exactly what its bar counted, or the number and the list contradict
+    // each other. "Carico per priorità" is built from ACTIVE tasks, so the priority drilldown is
+    // too; "Dove è andato il tempo" is built from every work log, done tasks included, so the tag
+    // drilldown keeps them.
+    const matchedTasks: Task[] =
+      focus.kind === "priority"
+        ? activeTasks.filter((task) => (task.priority ?? "none") === focus.value)
+        : tasks.filter((task) => task.tags?.includes(focus.value));
+    const taskIds = new Set(matchedTasks.map((task) => task.id));
+
+    const matchedSteps: Step[] = steps
+      .filter((step) => taskIds.has(step.taskId))
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+
+    // A tag filter follows the tag on the log itself; a priority filter follows the task.
+    const matchedLogs: WorkLog[] = (
+      focus.kind === "tag"
+        ? workLogs.filter((log) => log.tags.includes(focus.value))
+        : workLogs.filter((log) => taskIds.has(log.taskId))
+    ).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+    const minutes = matchedLogs.reduce((sum, log) => sum + (logDurations.get(log.id) ?? 0), 0);
+    const label = focus.kind === "tag" ? `#${focus.value}` : PRIORITY_LABELS[focus.value];
+
+    return { matchedTasks, matchedSteps, matchedLogs, minutes, label };
+  }, [activeTasks, focus, logDurations, steps, tasks, workLogs]);
+
+  const taskTitles = useMemo(() => new Map(tasks.map((task) => [task.id, task.title])), [tasks]);
+
+  const selectedMinutes = selectedDay ? minutesByDay.get(selectedDay) ?? 0 : 0;
+  const selectedTasks: Task[] = useMemo(
+    () => (selectedDay ? tasks.filter((task) => task.dueDate === selectedDay) : []),
+    [selectedDay, tasks],
+  );
 
   return (
-    <AuthGate>
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
-      <header className="space-y-4">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-slate-400"
-        >
-          ← Torna alla Home
-        </Link>
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Chronostep</p>
-          <h1 className="text-3xl font-bold text-slate-900">Insights & Pianificazione</h1>
-          <p className="text-sm text-slate-500">Capisci dove concentrare l’energia e quando consegnare.</p>
-        </div>
-        {focusedTask ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-slate-500">Focus rapido</p>
-            <h2 className="text-xl font-semibold text-slate-900">{focusedTask.title}</h2>
-            <p className="text-sm text-slate-500">
-              Ultimo log:{" "}
-              {focusedTaskActivity?.lastLogTimestamp
-                ? new Date(focusedTaskActivity.lastLogTimestamp).toLocaleString()
-                : "—"}
-            </p>
+    <AppShell>
+      <main className="mx-auto w-full max-w-5xl px-6 py-10">
+        {loadError ? (
+          <div className="mb-8">
+            <ErrorNote onRetry={() => void refresh()}>Non sono riuscito a leggere i dati.</ErrorNote>
           </div>
         ) : null}
-      </header>
 
-      {!isHydrated ? (
-        <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-          Caricamento dati…
-        </div>
-      ) : (
-        <>
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-2">
-              <p className="text-xs uppercase tracking-wide text-slate-500">Focus della settimana</p>
-              <h2 className="text-2xl font-semibold text-slate-900">Organizza priorità e scadenze</h2>
-            </div>
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-slate-700">Prossime scadenze</h3>
-                  <Link href="/tasks" className="text-xs font-semibold text-slate-500 hover:text-slate-800">
-                    Vai ai tasks
-                  </Link>
-                </div>
-                <ul className="mt-3 space-y-3">
-                  {upcomingTasks.length === 0 ? (
-                    <li className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                      Nessun task con due date nelle prossime due settimane.
-                    </li>
-                  ) : (
-                    upcomingTasks.slice(0, 4).map((task) => {
-                      const stepsSummary = getTaskStepSummary(stepsByTask, task.id);
-                      return (
-                        <li key={task.id} className="rounded-lg border border-slate-200 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                              <p className="text-xs text-slate-500">
-                                Due {formatShortDate(task.dueDate)} • {describePriority(task.priority)}
-                              </p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">
-                              {stepsSummary.done}/{stepsSummary.total}
-                            </span>
-                          </div>
-                        </li>
-                      );
-                    })
-                  )}
-                </ul>
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-slate-700">Attività recente</h3>
-                  <Link
-                    href="/timeline"
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-800"
-                  >
-                    Vai alla timeline
-                  </Link>
-                </div>
-                <ul className="mt-3 space-y-3">
-                  {recentTasks.length === 0 ? (
-                    <li className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                      Nessun log negli ultimi {RECENT_ACTIVITY_DAYS} giorni.
-                    </li>
-                  ) : (
-                    recentTasks.slice(0, 4).map((task) => {
-                      const lastLog = taskActivity.get(task.id)?.lastLogTimestamp;
-                      const stepsSummary = getTaskStepSummary(stepsByTask, task.id);
-                      const minutes = taskActivity.get(task.id)?.totalMinutes ?? 0;
-                      return (
-                        <li key={task.id} className="rounded-lg border border-slate-200 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                              <p className="text-xs text-slate-500">
-                                Ultimo log {lastLog ? new Date(lastLog).toLocaleString() : "—"}
-                              </p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">{minutes} min</span>
-                          </div>
-                          <p className="mt-2 text-xs text-slate-500">
-                            Progress {stepsSummary.done}/{stepsSummary.total}
-                          </p>
-                        </li>
-                      );
-                    })
-                  )}
-                </ul>
-              </div>
-            </div>
-          </section>
+        {!isHydrated ? (
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">Leggo i dati…</p>
+        ) : (
+          <>
+            <Verdict verdict={reading.verdict} />
 
-          <section className="grid gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Priorità</p>
-                  <h2 className="text-xl font-semibold text-slate-900">Carico per priorità</h2>
-                </div>
-                <span className="text-xs text-slate-400">basato sui task attivi</span>
-              </div>
-              <ul className="mt-6 space-y-4">
-                {priorityStats.map((stat) => {
-                  const label = stat.level === "none" ? "Nessuna" : describePriority(stat.level as Task["priority"]);
-                  const width = `${Math.min(100, (stat.minutes / maxPriorityMinutes) * 100)}%`;
-                  const isFocused =
-                    focusState?.type === "priority" && focusState.value === stat.level;
-                  return (
-                    <li key={stat.level} className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <button
-                          type="button"
-                          className={`rounded-full px-2 py-0.5 text-left font-semibold transition ${
-                            isFocused
-                              ? "bg-slate-900 text-white"
-                              : "text-slate-700 hover:bg-slate-100"
-                          }`}
-                          aria-pressed={isFocused}
-                          onClick={() =>
-                            isFocused
-                              ? setFocusParams({ priority: null, tag: null })
-                              : setFocusParams({ priority: stat.level, tag: null })
-                          }
-                        >
-                          {label}
-                        </button>
-                        <span className="text-slate-500">
-                          {stat.doneSteps}/{stat.totalSteps} steps · {stat.minutes} min
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className="h-2 rounded-full bg-slate-900 transition-all"
-                          style={{ width }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Tag</p>
-                  <h2 className="text-xl font-semibold text-slate-900">Focus per tag</h2>
-                </div>
-                <span className="text-xs text-slate-400">Top 6 per tempo investito</span>
-              </div>
-              {tagStats.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">Nessun tag disponibile.</p>
-              ) : (
-                <ul className="mt-6 space-y-4">
-                  {tagStats.map((stat) => {
-                    const width = `${Math.min(
-                      100,
-                      (stat.minutes / Math.max(tagStats[0]?.minutes ?? 1, 1)) * 100,
-                    )}%`;
-                    const isFocused =
-                      focusState?.type === "tag" && focusState.value === stat.tag;
-                    return (
-                      <li key={stat.tag}>
-                        <div className="flex items-center justify-between text-sm">
-                          <button
-                            type="button"
-                            className={`rounded-full px-2 py-0.5 text-left font-semibold transition ${
-                              isFocused
-                                ? "bg-amber-500 text-white"
-                                : "text-slate-700 hover:bg-amber-50"
-                            }`}
-                            aria-pressed={isFocused}
-                            onClick={() =>
-                              isFocused
-                                ? setFocusParams({ tag: null, priority: null })
-                                : setFocusParams({ tag: stat.tag, priority: null })
-                            }
+            {!reading.verdict.isSparse ? (
+              <>
+                {/* ── Calendario ────────────────────────────────────── */}
+                <section className="mt-12" aria-labelledby="titolo-calendario">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-3">
+                    <h2
+                      id="titolo-calendario"
+                      className="font-mono text-micro uppercase tracking-wider text-ink-muted"
+                    >
+                      {formatMonthKey(monthKey)}
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMonthKey(shiftMonth(monthKey, -1))}
+                        aria-label="Mese precedente"
+                        className="min-h-[2rem] border border-line px-2.5 font-mono text-tiny text-ink-muted hover:text-ink"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMonthKey(shiftMonth(monthKey, 1))}
+                        aria-label="Mese successivo"
+                        className="min-h-[2rem] border border-line px-2.5 font-mono text-tiny text-ink-muted hover:text-ink"
+                      >
+                        →
+                      </button>
+                    </div>
+                  </div>
+
+                  {/*
+                    Seven columns fit a 390px phone once the per-day minutes drop out below sm: the
+                    ink bar still carries how much, and the exact figure is one tap away in the day
+                    panel. Forcing a 32rem minimum instead pushed Saturday and Sunday off the edge
+                    inside a scroll container with no visible affordance — two days a week silently
+                    missing is worse than a coarser cell.
+                  */}
+                  <div className="overflow-x-auto">
+                    <div className="min-w-0 sm:min-w-[32rem]">
+                      <div className="mt-4 grid grid-cols-7 gap-1">
+                        {WEEKDAYS.map((day) => (
+                          <span
+                            key={day}
+                            className="pb-1 text-center font-mono text-micro uppercase tracking-wider text-ink-muted"
                           >
-                            #{stat.tag}
-                          </button>
-                          <span className="text-slate-500">
-                            {stat.tasks} task · {stat.doneSteps}/{stat.totalSteps} steps
+                            {day}
                           </span>
-                        </div>
-                        <div className="mt-1 h-2 rounded-full bg-slate-100">
-                          <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width }} />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          {focusState ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Drilldown</p>
-                  <h2 className="text-xl font-semibold text-slate-900">{focusLabel}</h2>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <span>{focusTasks.length} task</span>
-                  <span>{focusSteps.length} step</span>
-                  <span>{focusLogs.length} log</span>
-                  <button
-                    type="button"
-                    className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
-                    onClick={() => setFocusParams({ tag: null, priority: null })}
-                  >
-                    Reset focus
-                  </button>
-                </div>
-              </div>
-
-              {focusTasks.length === 0 && focusSteps.length === 0 && focusLogs.length === 0 ? (
-                <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
-                  Nessun elemento trovato per il focus selezionato.
-                </div>
-              ) : (
-                <div className="mt-6 grid gap-6 lg:grid-cols-3">
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-700">Task</h3>
-                    {focusTasks.length === 0 ? (
-                      <p className="text-sm text-slate-500">Nessun task collegato.</p>
-                    ) : (
-                      <ul className="space-y-3">
-                        {focusTasks.map((task) => {
-                          const summary = getTaskStepSummary(stepsByTask, task.id);
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {grid.map((cell) => {
+                          if (!cell.dayKey) return <span key={cell.key} />;
+                          const minutes = minutesByDay.get(cell.dayKey) ?? 0;
+                          const intensity = peakOfMonth > 0 ? minutes / peakOfMonth : 0;
+                          const isToday = cell.dayKey === today;
+                          const isSelected = cell.dayKey === selectedDay;
                           return (
-                            <li key={task.id} className="rounded-xl border border-slate-200 p-3">
-                              <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                              <p className="text-xs text-slate-500">
-                                Status {task.status.replace("_", " ")} •{" "}
-                                {describePriority(task.priority)}
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Progress {summary.done}/{summary.total} steps
-                              </p>
+                            <button
+                              key={cell.key}
+                              type="button"
+                              onClick={() => setSelectedDay(isSelected ? null : cell.dayKey ?? null)}
+                              aria-pressed={isSelected}
+                              aria-label={`${formatDayKey(cell.dayKey, {
+                                day: "numeric",
+                                month: "long",
+                              })}: ${minutes > 0 ? formatMinutes(minutes) : "niente registrato"}`}
+                              className={`flex h-14 flex-col items-stretch justify-between border p-1 text-left transition-colors sm:p-1.5 ${
+                                isSelected ? "border-ink" : "border-line hover:border-line-strong"
+                              }`}
+                            >
+                              <span
+                                data-numeric
+                                className={`font-mono text-tiny ${
+                                  isToday ? "font-semibold text-ink underline" : "text-ink-muted"
+                                }`}
+                              >
+                                {cell.label}
+                              </span>
+                              {/*
+                                Quantity is drawn as rule length in ink, not as a green fill. Green
+                                means "on track" everywhere else in this interface; spending it on
+                                "many minutes" would make every other green ambiguous. Leaving the
+                                cell unfilled also keeps the day number on a known background, so
+                                its contrast is the guaranteed one.
+                              */}
+                              {minutes > 0 ? (
+                                <span className="flex flex-col gap-1">
+                                  <span
+                                    data-numeric
+                                    className="hidden font-mono text-micro font-medium text-ink sm:block"
+                                  >
+                                    {formatMinutes(minutes)}
+                                  </span>
+                                  <span
+                                    aria-hidden="true"
+                                    className="h-1 bg-ink"
+                                    style={{ width: `${Math.max(8, Math.round(intensity * 100))}%` }}
+                                  />
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedDay ? (
+                    <div className="mt-4 border-t border-line pt-4">
+                      <h3 className="font-prose text-lead text-ink">
+                        {formatDayKey(selectedDay, {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                        })}
+                      </h3>
+                      <p className="mt-1 font-prose text-base text-ink-muted">
+                        {selectedMinutes > 0 ? (
+                          <>
+                            <span data-numeric className="font-mono text-ink">
+                              {formatMinutes(selectedMinutes)}
+                            </span>{" "}
+                            registrati
+                          </>
+                        ) : (
+                          "Niente registrato in questa giornata"
+                        )}
+                        {selectedTasks.length > 0
+                          ? `, e ${selectedTasks.length === 1 ? "un task scade" : `${selectedTasks.length} task scadono`} qui.`
+                          : "."}
+                      </p>
+                      {selectedTasks.length > 0 ? (
+                        <ul className="mt-2 flex flex-col gap-1">
+                          {selectedTasks.map((task) => (
+                            <li key={task.id}>
                               <Link
                                 href={`/tasks/${task.id}`}
-                                className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
+                                className="font-prose text-base text-ink no-underline hover:underline"
                               >
-                                Vai al task →
+                                {task.title}
                               </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </section>
+
+                {/* ── Ripartizioni ──────────────────────────────────── */}
+                <div className="mt-12 grid gap-12 md:grid-cols-2">
+                  {priorityLoad.length > 0 ? (
+                    <section aria-labelledby="titolo-priorita">
+                      <h2
+                        id="titolo-priorita"
+                        className="border-b border-line pb-2 font-mono text-micro uppercase tracking-wider text-ink-muted"
+                      >
+                        Carico per priorità
+                      </h2>
+                      <ul className="mt-3 flex flex-col gap-3">
+                        {priorityLoad.map((row) => {
+                          const active = focus?.kind === "priority" && focus.value === row.level;
+                          return (
+                            <li key={row.level}>
+                              <button
+                                type="button"
+                                aria-pressed={active}
+                                onClick={() =>
+                                  setFocus(active ? null : { kind: "priority", value: row.level })
+                                }
+                                className="w-full text-left"
+                              >
+                                <span className="flex items-baseline justify-between gap-4">
+                                  <span
+                                    className={`font-prose text-base ${
+                                      active ? "text-ink underline underline-offset-4" : "text-ink"
+                                    }`}
+                                  >
+                                    {PRIORITY_LABELS[row.level]}
+                                  </span>
+                                  <span data-numeric className="font-mono text-tiny text-ink-muted">
+                                    {row.tasks} task ·{" "}
+                                    <span className="text-ink">{formatMinutes(row.minutes)}</span>
+                                  </span>
+                                </span>
+                                <span className="mt-1 block h-1 bg-sunken">
+                                  <span
+                                    className="block h-1 bg-ink"
+                                    style={{ width: `${(row.minutes / maxPriorityMinutes) * 100}%` }}
+                                  />
+                                </span>
+                              </button>
                             </li>
                           );
                         })}
                       </ul>
-                    )}
-                  </div>
+                    </section>
+                  ) : null}
 
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-700">Step</h3>
-                    {focusSteps.length === 0 ? (
-                      <p className="text-sm text-slate-500">Nessuna step collegata.</p>
-                    ) : (
-                      <ul className="space-y-3">
-                        {focusSteps.map((step) => (
-                          <li key={step.id} className="rounded-xl border border-slate-200 p-3">
-                            <p className="text-sm font-semibold text-slate-900">{step.title}</p>
-                            <p className="text-xs text-slate-500">
-                              Task: {taskTitleById.get(step.taskId) ?? "Task sconosciuto"}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              Status {step.status.replace("_", " ")}
-                            </p>
-                            <Link
-                              href={`/tasks/${step.taskId}`}
-                              className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
-                            >
-                              Apri task →
-                            </Link>
-                          </li>
-                        ))}
+                  {tagLoad.length > 0 ? (
+                    <section aria-labelledby="titolo-tag">
+                      <h2
+                        id="titolo-tag"
+                        className="border-b border-line pb-2 font-mono text-micro uppercase tracking-wider text-ink-muted"
+                      >
+                        Dove è andato il tempo
+                      </h2>
+                      <ul className="mt-3 flex flex-col gap-3">
+                        {tagLoad.map((row) => {
+                          const active = focus?.kind === "tag" && focus.value === row.tag;
+                          return (
+                            <li key={row.tag}>
+                              <button
+                                type="button"
+                                aria-pressed={active}
+                                onClick={() => setFocus(active ? null : { kind: "tag", value: row.tag })}
+                                className="w-full text-left"
+                              >
+                                <span className="flex items-baseline justify-between gap-4">
+                                  <span
+                                    className={`font-mono text-small text-ink ${
+                                      active ? "underline underline-offset-4" : ""
+                                    }`}
+                                  >
+                                    #{row.tag}
+                                  </span>
+                                  <span data-numeric className="font-mono text-tiny text-ink">
+                                    {formatMinutes(row.minutes)}
+                                  </span>
+                                </span>
+                                <span className="mt-1 block h-1 bg-sunken">
+                                  <span
+                                    className="block h-1 bg-ink"
+                                    style={{ width: `${(row.minutes / maxTagMinutes) * 100}%` }}
+                                  />
+                                </span>
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-700">Work log</h3>
-                    {focusLogs.length === 0 ? (
-                      <p className="text-sm text-slate-500">Nessun work log collegato.</p>
-                    ) : (
-                      <ul className="space-y-3">
-                        {focusLogs.map((log) => (
-                          <li key={log.id} className="rounded-xl border border-slate-200 p-3">
-                            <p className="text-sm font-semibold text-slate-900">
-                              {taskTitleById.get(log.taskId) ?? "Task sconosciuto"}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {log.type.toUpperCase()} •{" "}
-                              {new Date(log.timestamp).toLocaleString()}
-                            </p>
-                            {log.stepId ? (
-                              <p className="text-xs text-slate-500">
-                                Step: {stepTitleById.get(log.stepId) ?? log.stepId}
-                              </p>
-                            ) : null}
-                            {log.message ? (
-                              <p className="text-xs text-slate-600">{log.message}</p>
-                            ) : null}
-                            <Link
-                              href={`/tasks/${log.taskId}`}
-                              className="mt-2 inline-flex text-xs font-semibold text-slate-700 hover:text-slate-900"
-                            >
-                              Apri task →
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
+                    </section>
+                  ) : null}
                 </div>
-              )}
-            </section>
-          ) : null}
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Trend mensili</p>
-                <h2 className="text-xl font-semibold text-slate-900">Ore, top task e top tag</h2>
-              </div>
-              <span className="text-xs text-slate-400">Ultimi 6 mesi</span>
-            </div>
-            {!hasTrendData ? (
-              <p className="mt-4 text-sm text-slate-500">
-                Nessun dato negli ultimi 6 mesi.
-              </p>
-            ) : (
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                {trendEntries.map((entry) => {
-                  const topTaskLabel = entry.topTaskId
-                    ? taskTitleById.get(entry.topTaskId) ?? "Task sconosciuto"
-                    : "—";
-                  const topTagLabel = entry.topTag ? `#${entry.topTag}` : "—";
-                  return (
-                    <article
-                      key={entry.monthKey}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {formatMonthLabel(entry.monthKey)}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Totale {formatMinutesAsHours(entry.totalMinutes)}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">
-                          {formatMinutesAsHours(entry.totalMinutes)}
-                        </span>
-                      </div>
-                      <div className="mt-3 space-y-2 text-sm text-slate-600">
-                        <p>
-                          <span className="font-semibold text-slate-700">Top task:</span>{" "}
-                          {topTaskLabel}{" "}
-                          {entry.topTaskMinutes > 0
-                            ? `(${formatMinutesAsHours(entry.topTaskMinutes)})`
-                            : ""}
-                        </p>
-                        <p>
-                          <span className="font-semibold text-slate-700">Top tag:</span>{" "}
-                          {topTagLabel}{" "}
-                          {entry.topTagMinutes > 0
-                            ? `(${formatMinutesAsHours(entry.topTagMinutes)})`
-                            : ""}
-                        </p>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                {/* ── Dettaglio della selezione ─────────────────────── */}
+                {focusResult ? (
+                  <section className="mt-12" aria-labelledby="titolo-dettaglio">
+                    <div className="flex flex-wrap items-baseline justify-between gap-4 border-b border-line pb-2">
+                      <h2
+                        id="titolo-dettaglio"
+                        className="font-mono text-micro uppercase tracking-wider text-ink-muted"
+                      >
+                        Dettaglio · {focusResult.label}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setFocus(null)}
+                        className="font-mono text-tiny text-ink underline underline-offset-4"
+                      >
+                        Azzera
+                      </button>
+                    </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Calendario</p>
-                <h2 className="text-xl font-semibold text-slate-900">Due date del mese</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:border-slate-400"
-                  onClick={() => changeMonth("prev")}
-                >
-                  ←
-                </button>
-                <span className="text-sm font-semibold text-slate-700">
-                  {monthLabel(calendarYear, calendarMonth)}
-                </span>
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 hover:border-slate-400"
-                  onClick={() => changeMonth("next")}
-                >
-                  →
-                </button>
-              </div>
-            </div>
-            <div className="mt-6 grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase text-slate-500">
-              {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map((day) => (
-                <span key={day}>{day}</span>
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-7 gap-2">
-              {calendarDays.map((calendarDay) => {
-                const isSelected = calendarDay.key === selectedDayKey;
-                const isInteractive = calendarDay.isCurrentMonth;
-                const dayMinutes = calendarDay.isCurrentMonth
-                  ? monthlyMinutesByDate.get(calendarDay.key) ?? 0
-                  : 0;
-                const heatmapStyles = getHeatmapStyles(dayMinutes, maxMonthlyMinutes);
-                return (
-                  <div
-                    key={calendarDay.key}
-                    role={isInteractive ? "button" : undefined}
-                    tabIndex={isInteractive ? 0 : -1}
-                    onClick={() =>
-                      isInteractive ? setSelectedDayKey(calendarDay.key) : undefined
-                    }
-                    onKeyDown={(event) => {
-                      if (!isInteractive) return;
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedDayKey(calendarDay.key);
-                      }
-                    }}
-                    className={`min-h-[90px] rounded-xl border p-2 text-sm outline-none ${
-                      isInteractive
-                        ? "cursor-pointer transition hover:border-slate-400"
-                        : ""
-                    } ${
-                      calendarDay.isCurrentMonth
-                        ? isSelected
-                          ? `border-slate-900 ${heatmapStyles.bgClass} ring-2 ring-slate-900 ring-offset-1`
-                          : `border-slate-200 ${heatmapStyles.bgClass}`
-                        : "border-dashed border-slate-100 text-slate-300"
-                    }`}
-                  >
-                    <p className="text-xs font-semibold">{calendarDay.label}</p>
-                    {calendarDay.isCurrentMonth && dayMinutes > 0 ? (
-                      <p className={`text-[10px] font-semibold ${heatmapStyles.textClass}`}>
-                        {dayMinutes} min
-                      </p>
-                    ) : null}
-                    <div className="mt-1 space-y-1">
-                      {calendarDay.tasks.slice(0, 2).map((task) => (
-                        <p key={task.id} className="truncate text-xs text-slate-600">
-                          {task.title}
-                        </p>
-                      ))}
-                      {calendarDay.tasks.length > 2 ? (
-                        <p className="text-xs text-slate-500">
-                          +{calendarDay.tasks.length - 2} altri
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-              <span className="font-semibold text-slate-600">Meno</span>
-              <div className="flex items-center gap-1">
-                {[
-                  "bg-white",
-                  "bg-emerald-50",
-                  "bg-emerald-100",
-                  "bg-emerald-200",
-                  "bg-emerald-300",
-                ].map((bgClass) => (
-                  <span
-                    key={bgClass}
-                    className={`h-3 w-3 rounded border border-slate-200 ${bgClass}`}
-                  />
-                ))}
-              </div>
-              <span className="font-semibold text-slate-600">Più</span>
-              <span className="text-slate-400">
-                Max giornaliero: {maxMonthlyMinutes} min
-              </span>
-            </div>
-            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
-              {selectedDayInfo && selectedDayInfo.isCurrentMonth ? (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Dettagli giorno
-                      </p>
-                      <h3 className="text-lg font-semibold text-slate-900">
-                        {formatFullDate(selectedDayInfo.key)}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-semibold text-slate-500">
-                      {selectedDayInfo.tasks.length} task
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs font-semibold text-slate-600">
-                    Totale worklog: {monthlyMinutesByDate.get(selectedDayInfo.key) ?? 0} min
-                  </p>
-                  {selectedDayInfo.tasks.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Nessuna due date in questo giorno. Seleziona un altro giorno del mese.
+                    <p className="mt-3 max-w-measure font-prose text-base text-ink-muted">
+                      <span data-numeric className="font-mono text-ink">
+                        {focusResult.matchedTasks.length}
+                      </span>{" "}
+                      task,{" "}
+                      <span data-numeric className="font-mono text-ink">
+                        {focusResult.matchedSteps.length}
+                      </span>{" "}
+                      step e{" "}
+                      <span data-numeric className="font-mono text-ink">
+                        {focusResult.matchedLogs.length}
+                      </span>{" "}
+                      voci di work log, per{" "}
+                      <span data-numeric className="font-mono text-ink">
+                        {formatMinutes(focusResult.minutes)}
+                      </span>
+                      .
                     </p>
-                  ) : (
-                    <ul className="mt-4 space-y-3">
-                      {selectedDayInfo.tasks.map((task) => (
-                        <li
-                          key={task.id}
-                          className="flex flex-col gap-1 rounded-xl border border-white bg-white/70 p-3 shadow-sm"
-                        >
-                          <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                          <p className="text-xs text-slate-500">
-                            Priorità {describePriority(task.priority)} •{" "}
-                            {getTaskStepSummary(stepsByTask, task.id).done}/
-                            {getTaskStepSummary(stepsByTask, task.id).total} steps
-                          </p>
-                          <Link
-                            href={`/tasks/${task.id}`}
-                            className="text-xs font-semibold text-slate-700 hover:text-slate-900"
-                          >
-                            Vai al task →
-                          </Link>
+
+                    {focusResult.matchedTasks.length === 0 ? (
+                      <p className="mt-4 font-prose text-base text-ink-muted">
+                        Niente corrisponde a questa selezione.
+                      </p>
+                    ) : (
+                      <div className="mt-4 grid gap-8 lg:grid-cols-3">
+                        <div>
+                          <h3 className="font-mono text-micro uppercase tracking-wider text-ink-muted">
+                            Task
+                          </h3>
+                          <ul className="mt-2 border-t border-line">
+                            {focusResult.matchedTasks.map((task) => (
+                              <li key={task.id} className="border-b border-line py-2">
+                                <Link
+                                  href={`/tasks/${task.id}`}
+                                  className="font-prose text-base text-ink no-underline hover:underline"
+                                >
+                                  {task.title}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div>
+                          <h3 className="font-mono text-micro uppercase tracking-wider text-ink-muted">
+                            Step
+                          </h3>
+                          {focusResult.matchedSteps.length === 0 ? (
+                            <p className="mt-2 font-prose text-base text-ink-muted">Nessuno step.</p>
+                          ) : (
+                            <ul className="mt-2 border-t border-line">
+                              {focusResult.matchedSteps.slice(0, 12).map((step) => (
+                                <li key={step.id} className="border-b border-line py-2">
+                                  <Link
+                                    href={`/tasks/${step.taskId}`}
+                                    className="font-prose text-base text-ink no-underline hover:underline"
+                                  >
+                                    {step.title}
+                                  </Link>
+                                  <span className="block font-mono text-tiny text-ink-muted">
+                                    {taskTitles.get(step.taskId) ?? "Task eliminato"}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div>
+                          <h3 className="font-mono text-micro uppercase tracking-wider text-ink-muted">
+                            Work log
+                          </h3>
+                          {focusResult.matchedLogs.length === 0 ? (
+                            <p className="mt-2 font-prose text-base text-ink-muted">Nessuna voce.</p>
+                          ) : (
+                            <ul className="mt-2 border-t border-line">
+                              {focusResult.matchedLogs.slice(0, 12).map((log) => (
+                                <li key={log.id} className="border-b border-line py-2">
+                                  <span data-numeric className="font-mono text-tiny text-ink-muted">
+                                    {formatDayKey(instantDayKey(log.timestamp), {
+                                      day: "numeric",
+                                      month: "short",
+                                    })}{" "}
+                                    {formatInstantTime(log.timestamp)}
+                                  </span>
+                                  {log.message ? (
+                                    <span className="block font-prose text-base text-ink">
+                                      {log.message}
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+
+                {/* ── Ultimi sei mesi ───────────────────────────────── */}
+                <section className="mt-12" aria-labelledby="titolo-trend">
+                  <h2
+                    id="titolo-trend"
+                    className="border-b border-line pb-2 font-mono text-micro uppercase tracking-wider text-ink-muted"
+                  >
+                    Ultimi sei mesi
+                  </h2>
+                  <ul className="mt-4 flex items-end gap-3">
+                    {recentMonths.map((key) => {
+                      const minutes = trends.get(key)?.totalMinutes ?? 0;
+                      const height = Math.round((minutes / maxMonthMinutes) * 100);
+                      return (
+                        <li key={key} className="flex flex-1 flex-col items-center gap-2">
+                          <span data-numeric className="font-mono text-micro text-ink-muted">
+                            {minutes > 0 ? formatMinutes(minutes) : "—"}
+                          </span>
+                          {/*
+                            A month with nothing in it gets a dashed baseline, not a two-pixel bar.
+                            A hairline the height of a rounding error reads as a broken chart; a
+                            dashed rule reads as "nothing here", which is what it means.
+                          */}
+                          {minutes > 0 ? (
+                            <div
+                              className={`w-full ${key === today.slice(0, 7) ? "bg-ink" : "bg-line-strong"}`}
+                              style={{ height: `${Math.max(4, height)}px` }}
+                            />
+                          ) : (
+                            <div className="w-full border-t border-dashed border-line-strong" />
+                          )}
+                          <span className="font-mono text-micro uppercase tracking-wider text-ink-muted">
+                            {formatMonthKey(key, { month: "short" })}
+                          </span>
                         </li>
-                      ))}
+                      );
+                    })}
+                  </ul>
+                </section>
+
+                {/* ── In arrivo ─────────────────────────────────────── */}
+                {upcoming.length > 0 ? (
+                  <section className="mt-12" aria-labelledby="titolo-arrivo">
+                    <h2
+                      id="titolo-arrivo"
+                      className="border-b border-line pb-2 font-mono text-micro uppercase tracking-wider text-ink-muted"
+                    >
+                      Nelle prossime tre settimane
+                    </h2>
+                    <ul>
+                      {upcoming.map((task) => {
+                        const days = daysBetweenKeys(today, task.dueDate as string);
+                        return (
+                          <li key={task.id} className="border-b border-line">
+                            <Link
+                              href={`/tasks/${task.id}`}
+                              className="flex flex-wrap items-baseline gap-x-4 py-3 no-underline transition-colors hover:bg-sunken"
+                            >
+                              <span className="min-w-0 flex-1 font-prose text-base text-ink">
+                                {task.title}
+                              </span>
+                              <span data-numeric className="font-mono text-tiny text-ink-muted">
+                                {days === 0 ? "oggi" : `fra ${days} ${days === 1 ? "giorno" : "giorni"}`}
+                              </span>
+                            </Link>
+                          </li>
+                        );
+                      })}
                     </ul>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Seleziona un giorno del mese per vedere i relativi task.
-                </p>
-              )}
-            </div>
-          </section>
-        </>
-      )}
-    </main>
-    </AuthGate>
+                  </section>
+                ) : null}
+              </>
+            ) : null}
+          </>
+        )}
+      </main>
+    </AppShell>
   );
 };
 
+/**
+ * useSearchParams opts a route into client-side rendering; the boundary is what keeps the rest of
+ * the page prerenderable rather than failing the build.
+ */
 const InsightsPage = () => (
   <Suspense
     fallback={
-      <main className="mx-auto flex w-full max-w-4xl items-center justify-center p-6 text-sm text-slate-500">
-        Caricamento Insights…
-      </main>
+      <AppShell>
+        <main className="mx-auto w-full max-w-5xl px-6 py-10">
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">Leggo i dati…</p>
+        </main>
+      </AppShell>
     }
   >
     <InsightsPageContent />

@@ -1,78 +1,118 @@
 # ChronoStep
 
-**Personal task tracking with hierarchical steps and time-aware work logging**
+**Un diario operativo: task, step annidati e il tempo che ci hai messo davvero.**
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Next.js](https://img.shields.io/badge/Next.js-16.1.6-black)](https://nextjs.org/)
-[![Firebase](https://img.shields.io/badge/Firebase-11.0.1-orange)](https://firebase.google.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3.3-blue)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.3.3-black)](https://nextjs.org/)
+[![Firebase](https://img.shields.io/badge/Firebase-11-orange)](https://firebase.google.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
+
+![Oggi](docs/screenshots/oggi-chiaro.png)
 
 ---
 
-## About
+## L'idea
 
-ChronoStep is a personal task-tracking web application designed to help you break down work into **Tasks → Steps → Substeps** and log **what you do and when you do it**. It's intentionally simple, fast, and focused on individual productivity rather than complex project management.
+Un cruscotto normale ti consegna un muro di riquadri con dei numeri dentro e lascia a te
+l'interpretazione. ChronoStep no: **ogni schermata apre con una conclusione** — una frase che dice
+come stai messo — e la sostiene con un paragrafo in cui i numeri stanno **dentro** la frase.
 
-Unlike heavyweight PM tools, ChronoStep emphasizes clarity, tracking, and execution. It gives you a structured way to organize your work hierarchically while maintaining a chronological record of your progress through timestamped work logs.
+> Oggi scadono 4 cose**.**
+> Oggi scadono `2 task` e `2 step`. Oggi hai registrato `1h 12m`, sotto la tua media di `1h 32m`.
 
-Built with modern web technologies and Firebase for authentication and data storage, ChronoStep keeps your data secure and isolated per user, making it ideal for developers and professionals who prefer a lightweight, structured workflow.
+Il punto finale prende il colore del giudizio: verde se le cose vanno, ambra se vogliono
+attenzione, rosso se sei indietro. Un numero che compare nel paragrafo non viene disegnato anche
+come riquadro da qualche altra parte.
 
----
-
-## Features
-
-- **Hierarchical Task Organization** - Break down work into Tasks, Steps, and nested Substeps with clear ordering
-- **Work Logging** - Record notes, start/stop timers, and track duration with timestamped entries
-- **Live Timer** - Start/stop a live timer in task detail with HH:MM:SS display and automatic work log creation
-- **Timeline View** - See a chronological view of all your activity across tasks with filtering by month/year and tags
-- **Today View** - Focus on tasks and steps due today to stay on track
-- **Insights Dashboard** - Visualize upcoming deadlines and recent activity for active tasks, plus priority distribution, tag summaries, monthly trends, an interactive calendar with daily work log heatmap, and click-through drilldowns by priority or tag
-- **Task Search & Filters** - Search by title, description, or tags; filter by status (active, todo, in progress, done, blocked)
-- **Priority Management** - Organize tasks by priority (low, medium, high) with automatic sorting
-- **Firebase Authentication** - Secure email/password authentication with per-user data isolation
-- **Firestore Security** - Robust security rules ensure users can only access their own data
+I verdetti sono calcolati da regole sui dati, non scritti a mano, e **devono poter dare cattive
+notizie**: se hai un timer acceso ma tre cose scadute, il titolo parla delle tre cose scadute. Dove
+i dati non bastano per un giudizio, la pagina lo dice invece di inventarne uno.
 
 ---
 
-## Quick Start
+## Cosa fa
 
-Get ChronoStep running locally in 5 steps:
+- **Task → Step annidati → Work log.** Un task può restare una riga sola («mandare la mail a
+  Bianchi») o diventare un progetto con otto step su tre livelli. Le due cose vivono nella stessa
+  lista senza che quella vuota sembri rotta.
+- **Il tempo si attacca allo step, non solo al task.** Il consuntivo non dice soltanto «19h su
+  questo lavoro», ma su quale pezzo di lavoro sono andate.
+- **Timer globale.** Parte da una riga dell'albero e si ferma da qualunque pagina, perché la barra
+  della sessione in corso è sempre a schermo — anche dopo aver cancellato il task su cui girava.
 
-1. **Prerequisites**: Node.js 18+ and a Firebase account ([free tier](https://firebase.google.com/pricing))
-2. **Clone the repository**:
-   ```bash
-   git clone https://github.com/[username]/chronostep.git
-   cd chronostep
-   ```
-3. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-4. **Configure Firebase**: Set up a Firebase project and add credentials to `.env` (see [SETUP.md](./SETUP.md))
-5. **Run the app**:
-   ```bash
-   npm run dev
-   ```
+![Sessione in corso](docs/screenshots/sessione-in-corso.png)
 
-For detailed setup instructions, see [SETUP.md](./SETUP.md).
+  Con una sessione aperta il verdetto cambia da solo: *"Sei già in pista."*
+- **Timeline, Report, Insights.** Registro cronologico, consuntivo per task, e una mappa di calore
+  del mese che concorda con i totali mensili — perché usano gli stessi bucket. Cliccando una priorità
+  o un tag si apre il dettaglio di cosa c'è sotto, e la vista filtrata è linkabile.
+- **Chiaro e scuro**, con interruttore a tre stati (chiaro, scuro, segui il sistema).
 
 ---
 
-## Tech Stack
+## Come si presenta
 
-- **[Next.js](https://nextjs.org/)** 16.1.6 - React framework with App Router
-- **[React](https://react.dev/)** 18.2.0 - UI library
-- **[TypeScript](https://www.typescriptlang.org/)** 5.3.3 - Type-safe JavaScript
-- **[Firebase](https://firebase.google.com/)** 11.0.1 - Authentication and Firestore database
-- **[Tailwind CSS](https://tailwindcss.com/)** 3.4.1 - Utility-first CSS framework
-
-**Architecture**: Client-side only, Next.js App Router, single data access layer (`useTaskStore` hook), fetch-on-demand data loading.
+| | |
+|---|---|
+| ![Dettaglio task](docs/screenshots/dettaglio-task.png) | ![Insights](docs/screenshots/insights.png) |
+| **Dettaglio task** — l'albero degli step è piatto con una colonna di numerazione (1, 2, 2.1): a tre livelli l'annidamento vero spende quasi tutta la larghezza in rientri. | **Insights** — la quantità è disegnata come lunghezza di un filetto in inchiostro, non come riempimento colorato: il verde resta riservato al giudizio. |
+| ![Oggi, tema scuro](docs/screenshots/oggi-scuro.png) | ![Oggi su telefono](docs/screenshots/oggi-mobile.png) |
+| **Tema scuro** — l'identità non sta nel nero: sta nell'anatomia del verdetto e nella coppia serif/monospace. Il tema è solo uno scambio di token OKLCH. | **Telefono** — desktop-first, ma le righe si impilano e la navigazione scorre invece di spezzarsi. |
 
 ---
 
-## Data Model
+## Avvio rapido
 
-ChronoStep uses three main entities:
+Servono Node.js 20+ e un progetto Firebase ([piano gratuito](https://firebase.google.com/pricing)).
+
+```bash
+git clone https://github.com/GiuseppeDM98/chronostep.git
+cd chronostep
+npm install
+cp .env.example .env      # poi riempi le quattro variabili NEXT_PUBLIC_FIREBASE_*
+npm run dev
+```
+
+Le istruzioni complete stanno in [SETUP.md](./SETUP.md).
+
+### Sviluppo contro gli emulatori
+
+Per lavorare senza toccare dati veri — e per vedere le schermate piene invece che vuote:
+
+```bash
+npm run emulators          # Auth + Firestore in locale
+npm run seed               # crea un account e dei dati d'esempio
+NEXT_PUBLIC_USE_FIREBASE_EMULATOR=true npm run dev
+```
+
+Il seed stampa le credenziali. I dati sono generati **relativi a oggi**, quindi la mappa di calore
+copre sempre il mese visibile e il confronto fra mesi ha sempre un mese precedente.
+
+---
+
+## Verifiche
+
+Non c'è un livello server: le regole Firestore sono l'**unico** confine fra i dati di due account,
+e le date sono la sorgente storica di più bug di questo progetto. Entrambe hanno una suite.
+
+```bash
+npm test              # tutto
+npm run test:rules    # 32 verifiche sulle regole, nell'emulatore
+npm run test:dates    # 15 verifiche × 4 fusi orari
+npm run test:insights # aggregazione: pairing start/stop, bucket, totali
+npm run test:verdicts # il motore dei verdetti, compreso che sappia dare cattive notizie
+```
+
+`test:rules` prova gli attacchi (un secondo account che tenta di leggere, dirottare o cancellare i
+dati del primo) **e** i flussi reali dell'app, perché un giro di vite sulle regole può rompere la
+cancellazione a cascata senza rompere nient'altro.
+
+`test:dates` rigira le stesse asserzioni da quattro fusi orari: un bug di date è invisibile da
+Greenwich.
+
+---
+
+## Modello dati
 
 ```typescript
 interface Task {
@@ -83,8 +123,8 @@ interface Task {
   status: "todo" | "in_progress" | "done" | "blocked";
   priority?: "low" | "medium" | "high";
   tags?: string[];
-  dueDate?: string; // ISO 8601 format
-  createdAt: string;
+  dueDate?: string;      // "2026-08-27" — un giorno di calendario, non un istante
+  createdAt: string;     // ISO 8601
   updatedAt: string;
 }
 
@@ -92,11 +132,11 @@ interface Step {
   id: string;
   userId: string;
   taskId: string;
-  parentStepId?: string; // For nested substeps
+  parentStepId?: string; // annidamento
   title: string;
   description?: string;
   status: "todo" | "in_progress" | "done";
-  order: number;
+  order: number;         // relativo ai FRATELLI, non globale
   dueDate?: string;
   createdAt: string;
   updatedAt: string;
@@ -110,155 +150,84 @@ interface WorkLog {
   message?: string;
   tags: string[];
   type: "start" | "stop" | "note";
-  timestamp: string;
+  timestamp: string;         // ISO 8601: un istante
   durationMinutes?: number;
 }
 ```
 
-All data is stored in Firestore with security rules enforcing per-user access.
+**Due tipi di data, trattati diversamente.** Una scadenza è un giorno sul calendario e si salva come
+`"2026-08-27"`: non può slittare. Un timestamp è un istante, e la giornata sotto cui finisce è
+quella **locale** di chi guarda. Vedi `src/lib/dates.ts`.
 
 ---
 
-## Documentation
-
-- **[SETUP.md](./SETUP.md)** - Complete setup guide with Firebase configuration
-- **[CLAUDE.md](./CLAUDE.md)** - Technical architecture and development reference
-- **[LICENSE.md](./LICENSE.md)** - AGPL-3.0 license details
-
----
-
-## Project Structure
+## Struttura
 
 ```
 chronostep/
 ├── src/
-│   ├── app/               # Next.js App Router pages
-│   │   ├── tasks/         # Task list and detail views
-│   │   ├── today/         # Today's due items
-│   │   ├── timeline/      # Chronological work log view
-│   │   ├── report/        # Monthly reports
-│   │   └── insights/      # Analytics dashboard
-│   ├── components/        # Reusable UI components
-│   │   ├── AuthGate.tsx   # Authentication wrapper
-│   │   └── TopNav.tsx     # Global navigation
-│   ├── hooks/             # Custom React hooks
-│   │   ├── useAuth.tsx    # Firebase auth context
-│   │   └── useTaskStore.ts # Data access layer
-│   └── lib/               # Utilities and types
-│       ├── types.ts       # TypeScript definitions
-│       ├── firebaseClient.ts # Firebase initialization
-│       └── insights.ts    # Report aggregation
-├── public/                # Static assets
-├── firestore.rules        # Firestore security rules
-└── package.json           # Dependencies and scripts
+│   ├── app/
+│   │   ├── page.tsx            # Oggi — la home
+│   │   ├── tasks/              # lista e dettaglio
+│   │   ├── timeline/ report/ insights/
+│   │   ├── layout.tsx          # font, tema, contratto di direzione
+│   │   └── globals.css         # token OKLCH, chiaro e scuro
+│   ├── components/
+│   │   ├── AppShell.tsx        # navigazione + sessione in corso
+│   │   ├── Verdict.tsx         # il blocco verdetto
+│   │   ├── Dialog.tsx          # dialogo con trappola del focus
+│   │   └── controls.tsx        # campi etichettati, bottoni con stato
+│   ├── hooks/                  # auth, store, timer, tema, orologio
+│   └── lib/
+│       ├── verdicts.ts         # il motore dei verdetti
+│       ├── dates.ts            # le due specie di data
+│       ├── insights.ts         # aggregazione e pairing delle sessioni
+│       └── types.ts
+├── tests/                      # regole, date, aggregazione, verdetti
+├── scripts/                    # seed emulatori, catture
+├── firestore.rules
+├── PRODUCT.md                  # verità di prodotto
+└── DESIGN.md                   # il sistema visivo
 ```
 
 ---
 
-## Project Status
+## Stack
 
-**Version**: 0.1.0 (alpha)
+Next.js 16 (App Router, tutte le pagine client) · React 18 · TypeScript · Tailwind 3 con token
+OKLCH · Firebase Auth + Firestore, solo SDK client. Nessun server, nessuna API route.
 
-**Current Features**: All core functionality is implemented and working:
-- Task, step, and work log management
-- Authentication and per-user data isolation
-- Timeline, insights, and reporting views
-- Search, filters, and priority sorting
-
-**Known Limitations**:
-- UI contains some mixed Italian/English text (being standardized)
-- No real-time data sync (fetch-on-demand only)
-- Performance may degrade with large datasets (all docs loaded per user)
-- No automated tests
-- Due dates use UTC midnight (timezone display may shift by a day)
-
-See [CLAUDE.md](./CLAUDE.md) for detailed technical limitations and risks.
+Tipografia: **Literata** per la voce umana (verdetti, prose, note) e **JetBrains Mono** per lo
+strumento (durate, conteggi, date, stati, etichette dei controlli). L'alternanza fra le due è
+l'identità: togli tutto il contenuto e il prodotto si riconosce ancora.
 
 ---
 
-## Roadmap
+## Limiti noti
 
-Future enhancements under consideration:
-
-- Drag-and-drop step ordering
-- Pomodoro/focus mode
-- Advanced analytics (daily productivity, time per task)
-- Data export to CSV/Markdown
-- Calendar sync integrations
-- Real-time data synchronization
-- Multi-user/team support
-- Internationalization (i18n) for full English UI
-- Automated testing suite
+- `useTaskStore` legge tutti i documenti dell'utente a ogni aggiornamento: su volumi grandi va
+  paginato.
+- Niente sincronizzazione realtime: si legge a richiesta e si rilegge dopo ogni scrittura.
+- La cancellazione a cascata non è transazionale. È divisa in blocchi per non superare il limite di
+  500 operazioni di Firestore, ma un errore a metà lascia uno stato parziale.
+- Il blocco delle registrazioni via `NEXT_PUBLIC_DISABLE_SIGNUPS` è un filtro dell'interfaccia, non
+  un controllo: per chiuderle davvero si configura Firebase Auth.
+- L'account demo mostrato nella schermata di accesso è condiviso con chiunque abbia il link.
 
 ---
 
-## Development
+## Documentazione
 
-### Available Scripts
-
-```bash
-npm run dev      # Start development server (http://localhost:3000)
-npm run build    # Create production build
-npm run start    # Run production build locally
-npm run lint     # Run ESLint
-```
-
-### Contributing
-
-Contributions are welcome! To contribute:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Test locally
-5. Commit with clear messages (`git commit -m "Add feature: description"`)
-6. Push to your fork (`git push origin feature/your-feature`)
-7. Open a Pull Request
-
-Please ensure:
-- Code follows existing patterns and style
-- TypeScript types are properly defined
-- No console errors or warnings
-- Documentation is updated if needed
+- [SETUP.md](./SETUP.md) — configurazione Firebase passo passo
+- [PRODUCT.md](./PRODUCT.md) — utenti, scopo, vincoli, principi
+- [DESIGN.md](./DESIGN.md) — token, tipografia, componenti, anti-pattern
+- [AGENTS.md](./AGENTS.md) · [CLAUDE.md](./CLAUDE.md) — riferimento tecnico
+- [LICENSE.md](./LICENSE.md) — AGPL-3.0
 
 ---
 
-## License
+## Licenza
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-
-This means:
-- You can use, modify, and distribute this software freely
-- If you modify and deploy it as a web service, you must make the source code available
-- Any derivative works must also be licensed under AGPL-3.0
-
-See [LICENSE.md](./LICENSE.md) for the full license text.
-
----
-
-## Support
-
-Need help or found a bug?
-
-- **Bug Reports**: [Open an issue](https://github.com/[username]/chronostep/issues)
-- **Feature Requests**: [Open an issue](https://github.com/[username]/chronostep/issues)
-- **Questions**: [Open a discussion](https://github.com/[username]/chronostep/issues)
-
----
-
-## Philosophy
-
-ChronoStep's goal is to be:
-
-- **Minimal but powerful** - Focus on essential features without bloat
-- **Structured but not rigid** - Hierarchical organization that adapts to your workflow
-- **Local-first but extensible** - Your data, your control, with cloud backup
-- **Developer-friendly and open** - Clean code, clear architecture, open source
-
-It's your personal timeline of progress — one "step" at a time.
-
----
-
-**Built with ❤️ for personal productivity**
-
-Enjoy building with ChronoStep! 🚀
+**GNU Affero General Public License v3.0.** Puoi usarlo, modificarlo e distribuirlo; se lo modifichi
+e lo pubblichi come servizio web devi renderne disponibile il sorgente, e ogni opera derivata resta
+sotto AGPL-3.0. Testo completo in [LICENSE.md](./LICENSE.md).

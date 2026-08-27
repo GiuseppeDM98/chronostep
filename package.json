@@ -6,26 +6,31 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:rules": "firebase emulators:exec --config firebase.test.json --only firestore --project demo-chronostep \"node tests/firestore-rules.test.mjs\"",
+    "test:dates": "node tests/run-dates.mjs",
+    "test": "npm run test:dates && npm run test:insights && npm run test:verdicts && npm run test:rules",
+    "test:insights": "node --import ./tests/register-hooks.mjs tests/insights.test.mts",
+    "test:verdicts": "node --import ./tests/register-hooks.mjs tests/verdicts.test.mts",
+    "emulators": "firebase emulators:start --only auth,firestore --project chronostep-9ab39",
+    "seed": "node scripts/seed-emulator.mjs",
+    "dev:emulator": "next dev"
   },
   "dependencies": {
     "firebase": "^11.0.1",
-    "firebase-admin": "^13.6.1",
-    "next": "^16.1.6",
+    "next": "^16.3.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@types/node": "^20.11.7",
     "@types/react": "^18.2.46",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.16",
-    "baseline-browser-mapping": "^2.9.17",
+    "playwright": "^1.62.1",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3"
-  },
-  "overrides": {
-    "fast-xml-parser": "5.3.4"
   }
 }

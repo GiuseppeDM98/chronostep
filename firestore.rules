@@ -1,12 +1,27 @@
 rules_version = '2';
+
+// Chronostep access model
+// =======================
+// Every document carries a `userId` and belongs to exactly one account. There is no server
+// component, so these rules are the ONLY boundary between two users' data.
+//
+// Why the verbs are split instead of sharing one `allow read, create, update, delete`:
+// a combined rule has to reason about `resource` (the stored document) and `request.resource`
+// (the document as it would be after the write) in the same expression. The previous version
+// OR-ed the two checks, which meant an update was authorised by the INCOMING userId alone —
+// anyone holding a document id (they travel in `/tasks/<id>` URLs) could rewrite that document
+// with their own uid and take it over from its real owner. Splitting the verbs makes each one
+// state exactly which side of the write it trusts, and `update` now demands both.
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function ownsResource(resourceData) {
-      return resourceData != null && signedIn() && resourceData.userId == request.auth.uid;
+    // True when `data` belongs to the caller. Used on both sides of a write.
+    function ownsResource(data) {
+      return data != null && signedIn() && data.userId == request.auth.uid;
     }
 
     function taskOwned(taskId) {
@@ -30,6 +45,9 @@ service cloud.firestore {
         stepDataOwned(get(/databases/$(database)/documents/steps/$(stepId)).data);
     }
 
+    // Reachable for reads/deletes: owned outright, or owned through its task or parent step.
+    // The indirect paths exist because the client deletes subtrees with queries that filter on
+    // `parentStepId` / `taskId` rather than on `userId` (see deleteStepWithChildren in useTaskStore).
     function stepAccessible(resourceData) {
       return resourceData != null && (
         stepDataOwned(resourceData) ||
@@ -45,25 +63,83 @@ service cloud.firestore {
       );
     }
 
+    // `userId` and the parent reference are assigned once at creation and are never edited by the
+    // app. Pinning them on update closes the ownership-transfer and re-parenting-across-tasks holes
+    // without the rules having to trust any particular client build.
+    function keepsOwner() {
+      return request.resource.data.userId == resource.data.userId;
+    }
+
+    // Shape checks run on CREATE only. Existing documents are deliberately exempt: a stricter
+    // rule applied to data written by an older build would make those documents permanently
+    // un-editable, and a rejected write here surfaces to the user as a silent failure.
+    // The size caps are far above any real input; they exist to bound abuse, not to validate UX.
+    function isText(value, maxLength) {
+      return value == null || (value is string && value.size() <= maxLength);
+    }
+
+    function validTags(tags) {
+      return tags == null || (tags is list && tags.size() <= 50);
+    }
+
+    // Optional fields are read through data.get(key, null): reading a key that is absent from the
+    // map aborts rule evaluation, and an aborted rule denies the write. The client writes explicit
+    // nulls today, but a validator must not depend on that to stay correct.
+    function validNewTask(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+        data.status in ['todo', 'in_progress', 'done', 'blocked'] &&
+        (data.get('priority', null) == null || data.priority in ['low', 'medium', 'high']) &&
+        isText(data.get('description', null), 20000) &&
+        validTags(data.get('tags', null));
+    }
+
+    function validNewStep(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+        data.status in ['todo', 'in_progress', 'done'] &&
+        data.order is number &&
+        data.taskId is string &&
+        isText(data.get('description', null), 20000);
+    }
+
+    function validNewWorkLog(data) {
+      return data.type in ['start', 'stop', 'note'] &&
+        data.taskId is string &&
+        data.timestamp is string &&
+        isText(data.get('message', null), 20000) &&
+        validTags(data.get('tags', null)) &&
+        (data.get('durationMinutes', null) == null || data.durationMinutes is number);
+    }
+
     match /tasks/{taskId} {
-      allow read, create, update, delete: if signedIn() && (
-        (request.resource != null && ownsResource(request.resource.data)) ||
-        ownsResource(resource.data)
-      );
+      allow read, delete: if ownsResource(resource.data);
+      allow create: if ownsResource(request.resource.data) && validNewTask(request.resource.data);
+      allow update: if ownsResource(resource.data) &&
+                       ownsResource(request.resource.data) &&
+                       keepsOwner();
     }
 
     match /steps/{stepId} {
-      allow read, create, update, delete: if signedIn() && (
-        (request.resource != null && stepAccessible(request.resource.data)) ||
-        stepAccessible(resource.data)
-      );
+      allow read, delete: if stepAccessible(resource.data);
+      // A new step must be owned by the caller AND hang off a task the caller owns, so a step can
+      // never be injected into someone else's task.
+      allow create: if ownsResource(request.resource.data) &&
+                       taskOwned(request.resource.data.taskId) &&
+                       validNewStep(request.resource.data);
+      allow update: if stepAccessible(resource.data) &&
+                       ownsResource(request.resource.data) &&
+                       keepsOwner() &&
+                       request.resource.data.taskId == resource.data.taskId;
     }
 
     match /workLogs/{logId} {
-      allow read, create, update, delete: if signedIn() && (
-        (request.resource != null && workLogAccessible(request.resource.data)) ||
-        workLogAccessible(resource.data)
-      );
+      allow read, delete: if workLogAccessible(resource.data);
+      allow create: if ownsResource(request.resource.data) &&
+                       taskOwned(request.resource.data.taskId) &&
+                       validNewWorkLog(request.resource.data);
+      allow update: if workLogAccessible(resource.data) &&
+                       ownsResource(request.resource.data) &&
+                       keepsOwner() &&
+                       request.resource.data.taskId == resource.data.taskId;
     }
   }
 }

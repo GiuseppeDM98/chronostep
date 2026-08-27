@@ -85,11 +85,32 @@ export type TaskStoreSnapshot = {
 
 // Input types strip server-managed fields (id, timestamps, userId) to
 // prevent clients from setting values that should be controlled server-side.
-export type CreateTaskInput = Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">;
-export type UpdateTaskInput = Partial<Omit<Task, "id" | "createdAt" | "updatedAt" | "userId">>;
+type Editable<T> = Omit<T, "id" | "createdAt" | "updatedAt" | "userId">;
 
-export type CreateStepInput = Omit<Step, "id" | "createdAt" | "updatedAt" | "userId">;
-export type UpdateStepInput = Partial<Omit<Step, "id" | "createdAt" | "updatedAt" | "userId">>;
+/**
+ * An update payload distinguishes three intents, and the distinction is the whole point:
+ *
+ *   { }                       leave every field as it is
+ *   { dueDate: "2026-…" }     set the field
+ *   { dueDate: null }         CLEAR the field
+ *
+ * The presence of the KEY decides whether a field is touched — not its value. That is why an
+ * optional field widens to `| null` here instead of relying on `undefined`: once a caller has
+ * built `{ dueDate: someCondition ? iso : undefined }`, the intent "clear it" is indistinguishable
+ * from "never mentioned it" by value alone, and the update silently becomes a no-op.
+ *
+ * The store reads these payloads with `"field" in input`, so a key explicitly set to `undefined`
+ * is honoured as a clear too, and only an absent key means "don't touch".
+ */
+type UpdatePayload<T> = {
+  [K in keyof T]?: undefined extends T[K] ? NonNullable<T[K]> | null : T[K];
+};
 
-export type CreateWorkLogInput = Omit<WorkLog, "id" | "createdAt" | "updatedAt" | "userId">;
-export type UpdateWorkLogInput = Partial<Omit<WorkLog, "id" | "createdAt" | "updatedAt" | "userId">>;
+export type CreateTaskInput = Editable<Task>;
+export type UpdateTaskInput = UpdatePayload<Editable<Task>>;
+
+export type CreateStepInput = Editable<Step>;
+export type UpdateStepInput = UpdatePayload<Editable<Step>>;
+
+export type CreateWorkLogInput = Editable<WorkLog>;
+export type UpdateWorkLogInput = UpdatePayload<Editable<WorkLog>>;

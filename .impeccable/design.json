@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-27T00:00:00.000Z",
+  "title": "Design System: ChronoStep",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool Paper Ground",
+        "canonical": "oklch(0.976 0.004 255)",
+        "darkValue": "oklch(0.176 0.008 260)",
+        "tonalRamp": ["oklch(0.15 0.004 255)", "oklch(0.26 0.004 255)", "oklch(0.37 0.004 255)", "oklch(0.48 0.004 255)", "oklch(0.60 0.004 255)", "oklch(0.72 0.004 255)", "oklch(0.85 0.004 255)", "oklch(0.95 0.004 255)"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Surface White",
+        "canonical": "oklch(1 0 0)",
+        "darkValue": "oklch(0.214 0.009 260)",
+        "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.26 0 0)", "oklch(0.37 0 0)", "oklch(0.48 0 0)", "oklch(0.60 0 0)", "oklch(0.72 0 0)", "oklch(0.85 0 0)", "oklch(0.95 0 0)"]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "oklch(0.952 0.005 255)",
+        "darkValue": "oklch(0.146 0.008 260)",
+        "tonalRamp": ["oklch(0.15 0.005 255)", "oklch(0.26 0.005 255)", "oklch(0.37 0.005 255)", "oklch(0.48 0.005 255)", "oklch(0.60 0.005 255)", "oklch(0.72 0.005 255)", "oklch(0.85 0.005 255)", "oklch(0.95 0.005 255)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline Rule",
+        "canonical": "oklch(0.893 0.006 255)",
+        "darkValue": "oklch(0.308 0.010 260)",
+        "tonalRamp": ["oklch(0.15 0.006 255)", "oklch(0.26 0.006 255)", "oklch(0.37 0.006 255)", "oklch(0.48 0.006 255)", "oklch(0.60 0.006 255)", "oklch(0.72 0.006 255)", "oklch(0.85 0.006 255)", "oklch(0.95 0.006 255)"]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Emphasis Rule",
+        "canonical": "oklch(0.795 0.008 255)",
+        "darkValue": "oklch(0.415 0.012 260)",
+        "tonalRamp": ["oklch(0.15 0.008 255)", "oklch(0.26 0.008 255)", "oklch(0.37 0.008 255)", "oklch(0.48 0.008 255)", "oklch(0.60 0.008 255)", "oklch(0.72 0.008 255)", "oklch(0.85 0.008 255)", "oklch(0.95 0.008 255)"]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Cool Near-Black Ink",
+        "canonical": "oklch(0.22 0.014 260)",
+        "darkValue": "oklch(0.962 0.003 260)",
+        "tonalRamp": ["oklch(0.15 0.014 260)", "oklch(0.26 0.014 260)", "oklch(0.37 0.014 260)", "oklch(0.48 0.014 260)", "oklch(0.60 0.014 260)", "oklch(0.72 0.014 260)", "oklch(0.85 0.014 260)", "oklch(0.95 0.014 260)"]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink (the contrast floor for text)",
+        "canonical": "oklch(0.442 0.012 260)",
+        "darkValue": "oklch(0.738 0.008 260)",
+        "tonalRamp": ["oklch(0.15 0.012 260)", "oklch(0.26 0.012 260)", "oklch(0.37 0.012 260)", "oklch(0.48 0.012 260)", "oklch(0.60 0.012 260)", "oklch(0.72 0.012 260)", "oklch(0.85 0.012 260)", "oklch(0.95 0.012 260)"]
+      },
+      "good": {
+        "role": "secondary",
+        "displayName": "On-Track Green",
+        "canonical": "oklch(0.505 0.128 155)",
+        "darkValue": "oklch(0.805 0.148 155)",
+        "tonalRamp": ["oklch(0.15 0.128 155)", "oklch(0.26 0.128 155)", "oklch(0.37 0.128 155)", "oklch(0.48 0.128 155)", "oklch(0.60 0.128 155)", "oklch(0.72 0.128 155)", "oklch(0.85 0.128 155)", "oklch(0.95 0.128 155)"]
+      },
+      "good-field": {
+        "role": "secondary",
+        "displayName": "On-Track Field",
+        "canonical": "oklch(0.945 0.036 155)",
+        "darkValue": "oklch(0.295 0.055 155)",
+        "tonalRamp": ["oklch(0.15 0.036 155)", "oklch(0.26 0.036 155)", "oklch(0.37 0.036 155)", "oklch(0.48 0.036 155)", "oklch(0.60 0.036 155)", "oklch(0.72 0.036 155)", "oklch(0.85 0.036 155)", "oklch(0.95 0.036 155)"]
+      },
+      "warn": {
+        "role": "secondary",
+        "displayName": "Wants-Attention Amber",
+        "canonical": "oklch(0.508 0.115 68)",
+        "darkValue": "oklch(0.822 0.138 78)",
+        "tonalRamp": ["oklch(0.15 0.115 68)", "oklch(0.26 0.115 68)", "oklch(0.37 0.115 68)", "oklch(0.48 0.115 68)", "oklch(0.60 0.115 68)", "oklch(0.72 0.115 68)", "oklch(0.85 0.115 68)", "oklch(0.95 0.115 68)"]
+      },
+      "warn-field": {
+        "role": "secondary",
+        "displayName": "Wants-Attention Field",
+        "canonical": "oklch(0.951 0.042 78)",
+        "darkValue": "oklch(0.305 0.052 78)",
+        "tonalRamp": ["oklch(0.15 0.042 78)", "oklch(0.26 0.042 78)", "oklch(0.37 0.042 78)", "oklch(0.48 0.042 78)", "oklch(0.60 0.042 78)", "oklch(0.72 0.042 78)", "oklch(0.85 0.042 78)", "oklch(0.95 0.042 78)"]
+      },
+      "bad": {
+        "role": "secondary",
+        "displayName": "Behind Red",
+        "canonical": "oklch(0.515 0.178 26)",
+        "darkValue": "oklch(0.722 0.168 22)",
+        "tonalRamp": ["oklch(0.15 0.178 26)", "oklch(0.26 0.178 26)", "oklch(0.37 0.178 26)", "oklch(0.48 0.178 26)", "oklch(0.60 0.178 26)", "oklch(0.72 0.178 26)", "oklch(0.85 0.178 26)", "oklch(0.95 0.178 26)"]
+      },
+      "bad-field": {
+        "role": "secondary",
+        "displayName": "Behind Field",
+        "canonical": "oklch(0.949 0.032 26)",
+        "darkValue": "oklch(0.302 0.062 22)",
+        "tonalRamp": ["oklch(0.15 0.032 26)", "oklch(0.26 0.032 26)", "oklch(0.37 0.032 26)", "oklch(0.48 0.032 26)", "oklch(0.60 0.032 26)", "oklch(0.72 0.032 26)", "oklch(0.85 0.032 26)", "oklch(0.95 0.032 26)"]
+      },
+      "inverse-ground": {
+        "role": "primary",
+        "displayName": "Inverted Surface",
+        "canonical": "oklch(0.22 0.014 260)",
+        "darkValue": "oklch(0.962 0.003 260)",
+        "tonalRamp": ["oklch(0.15 0.014 260)", "oklch(0.26 0.014 260)", "oklch(0.37 0.014 260)", "oklch(0.48 0.014 260)", "oklch(0.60 0.014 260)", "oklch(0.72 0.014 260)", "oklch(0.85 0.014 260)", "oklch(0.95 0.014 260)"]
+      },
+      "inverse-ink": {
+        "role": "primary",
+        "displayName": "Inverted Ink",
+        "canonical": "oklch(0.975 0.003 260)",
+        "darkValue": "oklch(0.176 0.008 260)",
+        "tonalRamp": ["oklch(0.15 0.003 260)", "oklch(0.26 0.003 260)", "oklch(0.37 0.003 260)", "oklch(0.48 0.003 260)", "oklch(0.60 0.003 260)", "oklch(0.72 0.003 260)", "oklch(0.85 0.003 260)", "oklch(0.95 0.003 260)"]
+      },
+      "focus": {
+        "role": "tertiary",
+        "displayName": "Focus Blue (rings and caret only)",
+        "canonical": "oklch(0.55 0.17 258)",
+        "darkValue": "oklch(0.72 0.15 258)",
+        "tonalRamp": ["oklch(0.15 0.17 258)", "oklch(0.26 0.17 258)", "oklch(0.37 0.17 258)", "oklch(0.48 0.17 258)", "oklch(0.60 0.17 258)", "oklch(0.72 0.17 258)", "oklch(0.85 0.17 258)", "oklch(0.95 0.17 258)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display Verdict", "purpose": "The home verdict at 640px and up. One per screen, never anywhere else." },
+      "headline": { "displayName": "Verdict", "purpose": "The opening sentence on every screen; the home verdict below 640px." },
+      "title": { "displayName": "Title", "purpose": "Dialog titles and the task detail page heading." },
+      "lead": { "displayName": "Lead", "purpose": "A decision row's label and the running elapsed clock." },
+      "body": { "displayName": "Verdict Paragraph", "purpose": "The supporting paragraph under the verdict, capped at 68ch. The only real body copy." },
+      "body-small": { "displayName": "Interface Prose", "purpose": "Input text, error notes, in-row prose." },
+      "figure": { "displayName": "Figure", "purpose": "Every duration, count, date, button label, nav item and metadata line. Tabular figures always on." },
+      "label": { "displayName": "Label", "purpose": "Section headings above a list, field labels, status chips, the wordmark. Uppercase, tracked." }
+    },
+    "shadows": [
+      {
+        "name": "panel",
+        "value": "0 1px 2px oklch(0.22 0.014 260 / 0.06), 0 8px 24px oklch(0.22 0.014 260 / 0.05)",
+        "darkValue": "0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px oklch(0 0 0 / 0.28)",
+        "purpose": "The modal dialog and nothing else. The only elevated surface in the system."
+      }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "The one custom easing token, for state transitions that need to settle." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce) { animation-duration: 0.01ms; transition-duration: 0.01ms }", "purpose": "Global honour of the OS setting; all animation collapses." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" }
+    ],
+    "containers": [
+      { "name": "wide", "value": "72rem", "purpose": "List screens and the app chrome (Oggi, Task, task detail)." },
+      { "name": "reading", "value": "56rem", "purpose": "Timeline and Report." },
+      { "name": "auth", "value": "32rem", "purpose": "The auth wall." },
+      { "name": "measure", "value": "68ch", "purpose": "The verdict sentence and its paragraph." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action a screen wants taken. Inverted ink, never a hue.",
+      "html": "<button class=\"ds-btn-primary\">Crea il primo task</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 2.5rem; padding: 8px 16px; background: var(--inverse-ground, oklch(0.22 0.014 260)); color: var(--inverse-ink, oklch(0.975 0.003 260)); font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; font-weight: 500; border: none; border-radius: 0; transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; } .ds-btn-primary:hover { opacity: 0.9; } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The default button: a hairline box that fills on hover.",
+      "html": "<button class=\"ds-btn-secondary\">Modifica</button>",
+      "css": ".ds-btn-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 2.5rem; padding: 8px 16px; background: transparent; color: var(--ink, oklch(0.22 0.014 260)); border: 1px solid var(--line-strong, oklch(0.795 0.008 255)); border-radius: 0; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; font-weight: 500; transition: background-color 0.15s cubic-bezier(0.16, 1, 0.3, 1); cursor: pointer; } .ds-btn-secondary:hover { background: var(--sunken, oklch(0.952 0.005 255)); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive actions. Red border and label, filling to the faint red field on hover.",
+      "html": "<button class=\"ds-btn-danger\">Elimina il task</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 8px 16px; background: transparent; color: var(--bad, oklch(0.515 0.178 26)); border: 1px solid var(--bad, oklch(0.515 0.178 26)); border-radius: 0; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; font-weight: 500; transition: background-color 0.15s; cursor: pointer; } .ds-btn-danger:hover { background: var(--bad-field, oklch(0.949 0.032 26)); } .ds-btn-danger:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Labelled Text Field",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Every control is programmatically labelled; the label is mono uppercase micro, the value is serif.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-field-1\">Titolo</label><input class=\"ds-input\" id=\"ds-field-1\" placeholder=\"Che cosa devi fare\" /></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; } .ds-field-label { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.6875rem; line-height: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted, oklch(0.442 0.012 260)); } .ds-input { width: 100%; padding: 10px 12px; background: var(--panel, oklch(1 0 0)); color: var(--ink, oklch(0.22 0.014 260)); border: 1px solid var(--line, oklch(0.893 0.006 255)); border-radius: 0; font-family: Literata, Georgia, serif; font-size: 0.9375rem; line-height: 1.55rem; caret-color: var(--focus, oklch(0.55 0.17 258)); transition: border-color 0.15s; } .ds-input::placeholder { color: var(--ink-muted, oklch(0.442 0.012 260)); opacity: 1; } .ds-input:hover { border-color: var(--line-strong, oklch(0.795 0.008 255)); } .ds-input:focus { border-color: var(--focus, oklch(0.55 0.17 258)); } .ds-input:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip-in-progress",
+      "description": "A drawn glyph plus a tracked mono label. The glyph carries the status independently of colour.",
+      "html": "<span class=\"ds-status ds-status-progress\"><svg viewBox=\"0 0 12 12\" aria-hidden=\"true\"><rect x=\"1.5\" y=\"1.5\" width=\"9\" height=\"9\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.25\"/><rect x=\"1.5\" y=\"1.5\" width=\"4.5\" height=\"9\" fill=\"currentColor\"/></svg>In corso</span>",
+      "css": ".ds-status { display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.6875rem; line-height: 1rem; letter-spacing: 0.08em; text-transform: uppercase; } .ds-status svg { width: 12px; height: 12px; flex-shrink: 0; } .ds-status-progress { color: var(--warn, oklch(0.508 0.115 68)); } .ds-status-done { color: var(--good, oklch(0.505 0.128 155)); } .ds-status-blocked { color: var(--bad, oklch(0.515 0.178 26)); } .ds-status-todo { color: var(--ink-muted, oklch(0.442 0.012 260)); }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "field-label",
+      "description": "The user's own vocabulary, set in mono with a hash and no container. Never restyled by meaning.",
+      "html": "<span class=\"ds-taglist\"><span class=\"ds-tag\">#cliente</span><span class=\"ds-tag\">#fattura</span><span class=\"ds-tag\">+2</span></span>",
+      "css": ".ds-taglist { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 4px; } .ds-tag { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; line-height: 1.1rem; color: var(--ink-muted, oklch(0.442 0.012 260)); }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "field-label",
+      "description": "Five permanent mono links on a panel header; the active item takes a 2px ink underline.",
+      "html": "<header class=\"ds-header\"><a class=\"ds-wordmark\" href=\"#\">ChronoStep</a><nav class=\"ds-nav\" aria-label=\"Sezioni\"><a class=\"ds-nav-link ds-nav-link-active\" href=\"#\" aria-current=\"page\">Oggi</a><a class=\"ds-nav-link\" href=\"#\">Task</a><a class=\"ds-nav-link\" href=\"#\">Timeline</a><a class=\"ds-nav-link\" href=\"#\">Report</a><a class=\"ds-nav-link\" href=\"#\">Insights</a></nav></header>",
+      "css": ".ds-header { display: flex; align-items: center; column-gap: 24px; padding: 12px 24px; background: var(--panel, oklch(1 0 0)); border-bottom: 1px solid var(--line, oklch(0.893 0.006 255)); } .ds-wordmark { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.6875rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink, oklch(0.22 0.014 260)); text-decoration: none; } .ds-nav { display: flex; align-items: center; column-gap: 20px; } .ds-nav-link { padding: 4px 0; border-bottom: 2px solid transparent; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; color: var(--ink-muted, oklch(0.442 0.012 260)); text-decoration: none; transition: color 0.15s; } .ds-nav-link:hover { color: var(--ink, oklch(0.22 0.014 260)); } .ds-nav-link-active { border-bottom-color: var(--ink, oklch(0.22 0.014 260)); color: var(--ink, oklch(0.22 0.014 260)); font-weight: 500; } .ds-nav-link:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Verdict Block",
+      "kind": "custom",
+      "refersTo": "dialog-panel",
+      "description": "The signature opening of every screen: dateline, a sentence whose final full stop carries the judgement colour, and one 68ch paragraph with inline mono figures.",
+      "html": "<section class=\"ds-verdict\"><div class=\"ds-dateline\">Buongiorno · mercoledì 27 agosto</div><h1 class=\"ds-verdict-line\">Sei in pari, e oggi hai già registrato più di ieri<span class=\"ds-stop-good\" aria-hidden=\"true\">.</span></h1><p class=\"ds-verdict-detail\">Hai lavorato <span class=\"ds-figure ds-figure-good\">2h 10m</span> su <span class=\"ds-figure\">3</span> task, e restano <span class=\"ds-figure ds-figure-warn\">2</span> step in scadenza <span class=\"ds-emphasis-warn\">oggi</span>.</p></section>",
+      "css": ".ds-verdict { padding-bottom: 32px; border-bottom: 1px solid var(--line, oklch(0.893 0.006 255)); } .ds-dateline { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; line-height: 1.1rem; color: var(--ink-muted, oklch(0.442 0.012 260)); } .ds-verdict-line { max-width: 68ch; margin: 12px 0 0; font-family: Literata, Georgia, serif; font-size: 2.75rem; line-height: 3.1rem; letter-spacing: -0.024em; font-weight: 600; color: var(--ink, oklch(0.22 0.014 260)); text-wrap: pretty; } .ds-stop-good { color: var(--good, oklch(0.505 0.128 155)); } .ds-verdict-detail { max-width: 68ch; margin: 16px 0 0; font-family: Literata, Georgia, serif; font-size: 1.0625rem; line-height: 1.7rem; color: var(--ink-muted, oklch(0.442 0.012 260)); } .ds-figure { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.92em; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink, oklch(0.22 0.014 260)); } .ds-figure-good { color: var(--good, oklch(0.505 0.128 155)); } .ds-figure-warn { color: var(--warn, oklch(0.508 0.115 68)); } .ds-emphasis-warn { font-weight: 500; color: var(--warn, oklch(0.508 0.115 68)); }"
+    },
+    {
+      "name": "Running Session Bar",
+      "kind": "custom",
+      "refersTo": "running-session-bar",
+      "description": "The live timer, inverted, in the app chrome above every page. Stop is always reachable because a session outlives the page it started from.",
+      "html": "<div class=\"ds-session\"><span class=\"ds-session-clock\"><span class=\"ds-pulse\" aria-hidden=\"true\"></span><span class=\"ds-elapsed\">00:42:18</span></span><span class=\"ds-session-title\"><a href=\"#\">Preventivo Rossi<span class=\"ds-session-step\"> · Raccogliere i dati</span></a></span><button class=\"ds-session-stop\">Ferma e registra</button></div>",
+      "css": ".ds-session { display: flex; flex-wrap: wrap; align-items: center; column-gap: 24px; row-gap: 12px; padding: 12px 24px; background: var(--inverse-ground, oklch(0.22 0.014 260)); color: var(--inverse-ink, oklch(0.975 0.003 260)); } .ds-session-clock { display: flex; align-items: center; gap: 10px; } .ds-pulse { width: 8px; height: 8px; flex-shrink: 0; border-radius: 999px; background: var(--good, oklch(0.505 0.128 155)); animation: ds-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; } @keyframes ds-pulse { 50% { opacity: 0.4; } } .ds-elapsed { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 1.25rem; line-height: 1.75rem; font-weight: 500; font-variant-numeric: tabular-nums; } .ds-session-title { flex: 1 1 0; min-width: 0; font-family: Literata, Georgia, serif; font-size: 0.9375rem; } .ds-session-title a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; } .ds-session-step { opacity: 0.8; } .ds-session-stop { min-height: 2.25rem; padding: 6px 16px; background: var(--inverse-ink, oklch(0.975 0.003 260)); color: var(--inverse-ground, oklch(0.22 0.014 260)); border: none; border-radius: 0; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: opacity 0.15s; } .ds-session-stop:hover { opacity: 0.9; } .ds-session-stop:focus-visible { outline: 2px solid var(--focus, oklch(0.55 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ruled List Row",
+      "kind": "card",
+      "refersTo": "input-text",
+      "description": "This system's replacement for the card: rows divided by 1px rules, hovering to the sunken wash, with the cost of the work in mono at the right and an em dash where there is none.",
+      "html": "<ul class=\"ds-list\"><li class=\"ds-row\"><a class=\"ds-row-link\" href=\"#\"><span class=\"ds-dot ds-dot-bad\" aria-hidden=\"true\"></span><span class=\"ds-row-body\"><span class=\"ds-row-title\">Preventivo Rossi</span><span class=\"ds-row-context\">in Offerte di settembre</span><span class=\"ds-row-cost\">1h 25m finora</span><span class=\"ds-row-due\">in ritardo di 3 giorni</span></span></a></li><li class=\"ds-row\"><a class=\"ds-row-link\" href=\"#\"><span class=\"ds-dot\" aria-hidden=\"true\"></span><span class=\"ds-row-body\"><span class=\"ds-row-title\">Richiamare il fornitore</span><span class=\"ds-row-cost\">—</span></span></a></li></ul>",
+      "css": ".ds-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line, oklch(0.893 0.006 255)); } .ds-row { border-bottom: 1px solid var(--line, oklch(0.893 0.006 255)); } .ds-row-link { display: flex; gap: 12px; padding: 16px 8px; text-decoration: none; transition: background-color 0.15s; } .ds-row-link:hover { background: var(--sunken, oklch(0.952 0.005 255)); } .ds-dot { width: 8px; height: 8px; flex-shrink: 0; margin-top: 8px; background: var(--line-strong, oklch(0.795 0.008 255)); } .ds-dot-bad { background: var(--bad, oklch(0.515 0.178 26)); } .ds-row-body { display: flex; flex: 1 1 0; min-width: 0; align-items: baseline; gap: 16px; } .ds-row-title { flex: 1 1 0; min-width: 0; font-family: Literata, Georgia, serif; font-size: 1.25rem; line-height: 1.75rem; color: var(--ink, oklch(0.22 0.014 260)); } .ds-row-context { font-family: Literata, Georgia, serif; font-size: 0.75rem; color: var(--ink-muted, oklch(0.442 0.012 260)); } .ds-row-cost { flex-shrink: 0; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--ink-muted, oklch(0.442 0.012 260)); } .ds-row-due { flex-shrink: 0; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.75rem; color: var(--bad, oklch(0.515 0.178 26)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verdict",
+    "overview": "ChronoStep reads like a page from a well-set report rather than a dashboard. Every screen opens with a dateline, then one sentence that says how things actually stand, then a single paragraph at reading measure that backs that sentence with figures set inline. The figures are never repeated as tiles: the paragraph *is* the readout. That refusal is the identity, and it is why the interface has no KPI row, no card grid, and no chart competing with the sentence above it.\n\nThe world is a cool near-neutral ground with no cards. Regions are divided by 1px rules and by whitespace, not by floating panels; the only elevated surface in the whole build is the modal dialog. Two typefaces carry the whole hierarchy: Literata is the human voice (verdicts, prose, descriptions, notes) and JetBrains Mono is the instrument (every duration, count, date, time, status code and control label). Strip out all the content and the alternation of those two faces still reads as this product.\n\nColour is spent on one job only: judgement. Green means on track, amber means it wants attention, red means behind. Nothing is tinted for decoration and nothing is tinted for identity, which is why the primary action is ink rather than a brand hue — a coloured button would spend the single signal the interface has. Both themes are first-class: light and dark are complete token sets, and the un-toggled state follows the operating system.",
+    "keyCharacteristics": [
+      "Conclusion first: dateline, verdict sentence, one 68ch paragraph, then the work.",
+      "No cards, no nested containers; 1px rules and whitespace divide everything.",
+      "Serif for voice, mono for every figure and control label — the split is the identity.",
+      "Colour means judgement only; the primary action is ink.",
+      "Square corners everywhere except the focus ring (2px) and two circular dots.",
+      "No text colour lighter than `ink-muted`; anything lighter may only draw a rule."
+    ],
+    "rules": [
+      { "name": "The Judgement-Only Rule", "body": "Colour in this interface means exactly one thing: how something stands. Green on track, amber wants attention, red behind. If a colour is not answering that question, it is `ink`, `ink-muted`, or a rule.", "section": "colors" },
+      { "name": "The Muted Floor Rule", "body": "`ink-muted` is the lightest colour any text may take. There is no `text-faint` token and none may be added. Anything lighter (`line`, `line-strong`) may draw a rule or a border and may never carry a word. A previous build shipped a 2.56:1 grey holding real information; making that unrepresentable in the token set is the fix that survives future edits.", "section": "colors" },
+      { "name": "The No-Ramp Rule", "body": "Colour never encodes quantity. Magnitude is drawn — a filled `ink` bar against a `sunken` track, a taller column — never a green that gets greener. A heat ramp once made every other green on the screen ambiguous.", "section": "colors" },
+      { "name": "The Opaque Token Rule", "body": "The tokens hold complete `oklch()` colours, so slash-opacity utilities (`bg-panel/50`) do not work on them and must not be reintroduced. Reach for a dedicated token instead of fading one; a faded ink is how unreadable text gets shipped.", "section": "colors" },
+      { "name": "The Two Registers Rule", "body": "Literata is the voice; JetBrains Mono is the instrument. A duration, count, date, time, status code or control label is mono. A word is serif. Setting a word like \"oggi\" in mono is monospace as costume.", "section": "typography" },
+      { "name": "The Split Quantity Rule", "body": "A counted quantity splits: the digit is mono, the noun is prose (\"3 cose scadute\"). `countRuns()` in `src/lib/verdicts.ts` enforces this, and every counted phrase goes through it.", "section": "typography" },
+      { "name": "The Coloured Full Stop Rule", "body": "The verdict sentence is set in `ink` and only its final period takes the judgement colour. The page announces its own reading without a badge, a banner, or a coloured heading. The stop is `aria-hidden` because it is a visual reading, not a word.", "section": "typography" },
+      { "name": "The Tabular Rule", "body": "Every figure in this interface is compared against another figure. `.tnum`, `<time>` and `[data-numeric]` all force `tabular-nums` globally; a mono figure that is not marked `data-numeric` is a bug.", "section": "typography" },
+      { "name": "The Chrome-Above Rule", "body": "The running session lives in the application chrome, above the dateline, never inside a page. A session outlives the page it was started from, and a Stop that existed only on one task's screen stranded the timer when that task was deleted.", "section": "layout" },
+      { "name": "The No-Tile Rule", "body": "A figure stated in the verdict paragraph is never also drawn as a tile, a counter, or a KPI card. If a number deserves a screen, it goes in the sentence.", "section": "layout" },
+      { "name": "The One Shadow Rule", "body": "`shadow-panel` belongs to the dialog and nothing else. A shadow anywhere else in this interface would be a card, and there are no cards.", "section": "elevation" },
+      { "name": "The Inversion Rule", "body": "When something must dominate the screen it inverts (`inverse-ground` on `inverse-ink`) rather than lifting. That is how the primary button, the live session bar, and the selected theme segment all read as foreground without a single pixel of blur.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do open every screen with the verdict block: dateline, one sentence, one 68ch paragraph.",
+      "Do set every duration, count, date, time, status code and control label in JetBrains Mono, and mark it `data-numeric` so tabular figures apply.",
+      "Do split a counted quantity through `countRuns()` — mono digit, serif noun.",
+      "Do keep all text at `ink` or `ink-muted`; use `line` / `line-strong` for rules only.",
+      "Do draw magnitude as a filled `ink` bar on a `sunken` track, or as column height.",
+      "Do draw zero rather than leaving a slot blank: an em dash (—) with an `sr-only` explanation is this system's mark for \"nothing here\".",
+      "Do pass `pending` to every button that fires an async write; it disables, announces `aria-busy`, and shows a spinner.",
+      "Do pair every status colour with its drawn glyph, so status survives greyscale.",
+      "Do ship both themes: any new token needs a value in `:root`, in `:root[data-theme=\"dark\"]`, and in the `prefers-color-scheme` block.",
+      "Do divide regions with 1px `line` rules and vertical rhythm.",
+      "Do draw every icon as inline SVG on `currentColor`."
+    ],
+    "donts": [
+      "Don't add a text colour lighter than `ink-muted`, and don't add a `text-faint` token.",
+      "Don't use colour to encode quantity; no heat ramps, no graduated greens.",
+      "Don't set prose words in the mono face — `figure` is a number, never a word.",
+      "Don't introduce cards or nested containers; nothing gets a border *and* a fill *and* a shadow.",
+      "Don't colour the primary action. It is ink, inverted; a hue there spends the judgement signal.",
+      "Don't apply `shadow-panel` to anything but the dialog.",
+      "Don't repeat a figure from the verdict paragraph as a tile, counter or KPI card.",
+      "Don't use slash-opacity on a colour token (`bg-panel/50`); the tokens are complete `oklch()` values and it silently fails.",
+      "Don't round a corner. Square is the form language; the focus ring, the two dots and the scrollbar thumb are the only exceptions.",
+      "Don't leave a focusable element without a visible focus ring.",
+      "Don't add a kicker or eyebrow above a heading; the dateline is content, not a label."
+    ]
+  }
+}

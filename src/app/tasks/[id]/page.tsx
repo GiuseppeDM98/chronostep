@@ -1,256 +1,135 @@
 /**
- * TaskDetailPage - Comprehensive task management view
+ * Task detail — the one screen where structure is manipulated.
  *
- * Displays a single task with:
- * - Task editing modal with Esc warning on unsaved changes
- * - Hierarchical step tree with parent/child relationships and auto-complete
- * - Work log creation/editing with step association
- * - Status filtering for steps
+ * The step tree is rendered flat with a numbering gutter rather than as nested `<ul>`s: at three
+ * levels the nested version spends most of its width on indentation, and this screen has to hold a
+ * task with no steps at all as comfortably as one with eight across three levels. The numbering
+ * (1, 2, 2.1) is what carries depth.
  *
- * Architecture notes:
- * - 40+ state variables manage three modal forms (task, step, worklog)
- * - Text snapshots track unsaved changes for Esc warning behavior
- * - Step tree is built recursively and supports status filtering with descendants
- * - Dates use UTC midnight to avoid timezone shifts in calendar views
+ * Status filtering keeps ancestors visible, dimmed. The previous version lifted matching substeps
+ * to the top level and dropped their parents, which produced two rows both labelled "#1" and no way
+ * to tell what they belonged to.
  */
 "use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useRef, useState } from "react";
-import AuthGate from "../../../components/AuthGate";
-import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
+import { use, useMemo, useState } from "react";
+import AppShell from "../../../components/AppShell";
+import Dialog from "../../../components/Dialog";
+import Verdict from "../../../components/Verdict";
+import {
+  Button,
+  DateInput,
+  ErrorNote,
+  Field,
+  Select,
+  StatusChip,
+  TagList,
+  TextArea,
+  TextInput,
+  STEP_STATUS_LABELS,
+  TASK_STATUS_LABELS,
+} from "../../../components/controls";
+import { useAsyncAction } from "../../../hooks/useAsyncAction";
+import { useNow } from "../../../hooks/useNow";
 import { useTaskStore } from "../../../hooks/useTaskStore";
-import { useTimer, type TimerState } from "../../../hooks/useTimer";
+import { useTimer } from "../../../hooks/useTimer";
+import {
+  formatDueDate,
+  formatInstantTime,
+  formatMinutes,
+  instantDayKey,
+  todayKey,
+} from "../../../lib/dates";
+import { buildTaskActivity } from "../../../lib/insights";
+import { readTask } from "../../../lib/verdicts";
+import type { Step, StepStatus, Task, TaskStatus, WorkLogType } from "../../../lib/types";
 
 type StepNode = Step & { children: StepNode[] };
+type FlatStep = { step: Step; depth: number; numbering: string };
 
-const STEP_STATUS_LABELS: Record<StepStatus, string> = {
-  todo: "To do",
-  in_progress: "In progress",
-  done: "Done",
-};
+const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
+const STEP_STATUSES: StepStatus[] = ["todo", "in_progress", "done"];
+const WORKLOG_TYPES: Array<{ value: WorkLogType; label: string }> = [
+  { value: "note", label: "Nota" },
+  { value: "start", label: "Inizio" },
+  { value: "stop", label: "Fine" },
+];
+const PRIORITIES: Array<{ value: NonNullable<Task["priority"]>; label: string }> = [
+  { value: "high", label: "Alta" },
+  { value: "medium", label: "Media" },
+  { value: "low", label: "Bassa" },
+];
 
-const WORKLOG_TYPE_LABELS: Record<WorkLogType, string> = {
-  start: "Start",
-  stop: "Stop",
-  note: "Note",
-};
-
-const TASK_STATUS_OPTIONS: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
-const STEP_STATUS_OPTIONS: StepStatus[] = TASK_STATUS_OPTIONS.filter(
-  (status): status is StepStatus => status !== "blocked",
-);
-const TASK_PRIORITY_OPTIONS: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
-const isRunningTimerState = (
-  state: TimerState,
-): state is Extract<TimerState, { status: "running" }> => state.status === "running";
-
-// Build a stable step tree per task, keeping sibling order deterministic.
-const buildStepTree = (taskSteps: Step[]) => {
-  const map = new Map<string, StepNode>();
-
-  taskSteps.forEach((step) => {
-    map.set(step.id, { ...step, children: [] });
-  });
+const buildStepTree = (steps: Step[]): StepNode[] => {
+  const byId = new Map<string, StepNode>();
+  steps.forEach((step) => byId.set(step.id, { ...step, children: [] }));
 
   const roots: StepNode[] = [];
-
-  map.forEach((node) => {
-    // Only attach a node if its parent exists in the same task snapshot.
-    if (node.parentStepId && map.has(node.parentStepId)) {
-      map.get(node.parentStepId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
+  byId.forEach((node) => {
+    const parent = node.parentStepId ? byId.get(node.parentStepId) : undefined;
+    // A parent outside this task's snapshot (or a self-reference) leaves the node at the root
+    // rather than dropping it: an unreachable step is worse than a misplaced one.
+    if (parent && parent.id !== node.id) parent.children.push(node);
+    else roots.push(node);
   });
 
-  const sortNodes = (nodes: StepNode[]) => {
-    // Order is user-defined, so keep it stable across renders.
-    nodes.sort((a, b) => a.order - b.order);
-    nodes.forEach((child) => sortNodes(child.children));
+  const sort = (nodes: StepNode[]) => {
+    nodes.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+    nodes.forEach((node) => sort(node.children));
   };
-
-  sortNodes(roots);
+  sort(roots);
   return roots;
 };
 
-const formatDate = (iso?: string) => {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleDateString();
-};
-
-const parseTagsInput = (value: string) =>
-  value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-
-const formatTagsInput = (tags?: string[]) => tags?.join(", ") ?? "";
-
-// Convert ISO timestamp to date input value (YYYY-MM-DD format).
-// Uses .slice(0, 10) to extract date portion, which gives UTC date.
-// This keeps date grouping consistent across timezones - a task due
-// "2024-01-15" at UTC midnight appears as "2024-01-15" everywhere,
-// not shifted to local time (which could show "2024-01-14" in some zones).
-const toDateInputValue = (iso?: string) => {
-  if (!iso) return "";
-  return new Date(iso).toISOString().slice(0, 10);
-};
-
-const StatusBadge = ({ status }: { status: Task["status"] }) => {
-  const styles: Record<Task["status"], string> = {
-    todo: "bg-slate-100 text-slate-700",
-    in_progress: "bg-amber-100 text-amber-800",
-    done: "bg-emerald-100 text-emerald-800",
-    blocked: "bg-rose-100 text-rose-800",
-  };
-  return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${styles[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-};
-
-const STEP_STATUS_BADGE_STYLES: Record<StepStatus, string> = {
-  todo: "bg-slate-100 text-slate-700",
-  in_progress: "bg-amber-100 text-amber-800",
-  done: "bg-emerald-100 text-emerald-800",
-};
-
-const STEP_STATUS_DOT_STYLES: Record<StepStatus, string> = {
-  todo: "bg-slate-400",
-  in_progress: "bg-amber-500",
-  done: "bg-emerald-500",
-};
-
-const StepStatusBadge = ({ status }: { status: StepStatus }) => (
-  <span
-    className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STEP_STATUS_BADGE_STYLES[status]}`}
-  >
-    <span className={`h-2 w-2 rounded-full ${STEP_STATUS_DOT_STYLES[status]}`} />
-    {STEP_STATUS_LABELS[status]}
-  </span>
-);
-
-// Filter step tree by status while preserving hierarchy.
-// When a parent doesn't match the filter, we "lift" its matching
-// descendants to the result array so they remain visible in the UI.
-// This prevents hiding relevant steps just because their parent differs.
-const filterStepTree = (nodes: StepNode[], status: StepStatus): StepNode[] => {
-  const matches: StepNode[] = [];
-
-  nodes.forEach((node) => {
-    const filteredChildren = filterStepTree(node.children, status);
-    if (node.status === status) {
-      matches.push({ ...node, children: filteredChildren });
-    } else {
-      // Lift matching descendants when the parent does not match the filter.
-      matches.push(...filteredChildren);
-    }
+const flattenTree = (nodes: StepNode[], prefix = "", depth = 0): FlatStep[] =>
+  nodes.flatMap((node, index) => {
+    const numbering = prefix ? `${prefix}.${index + 1}` : `${index + 1}`;
+    return [{ step: node, depth, numbering }, ...flattenTree(node.children, numbering, depth + 1)];
   });
 
-  return matches;
+/** Ids of every descendant of `stepId`, so a step can never be reparented under itself. */
+const descendantsOf = (nodes: StepNode[], stepId: string): Set<string> => {
+  const found = new Set<string>();
+  const walk = (node: StepNode, insideTarget: boolean) => {
+    const collecting = insideTarget || node.id === stepId;
+    node.children.forEach((child) => {
+      if (collecting) found.add(child.id);
+      walk(child, collecting);
+    });
+  };
+  nodes.forEach((node) => walk(node, false));
+  return found;
 };
 
-/**
- * StepTree - Recursive step hierarchy display
- *
- * Renders nested steps with status badges, edit/delete actions,
- * and visual nesting with border-left indentation.
- *
- * @param nodes - Step tree nodes to render (already filtered/ordered)
- * @param onStatusChange - Handler for inline status updates
- * @param onDelete - Handler for step deletion
- * @param onEdit - Handler to open edit modal
- */
-const StepTree = ({
-  nodes,
-  onStatusChange,
-  onDelete,
-  onEdit,
-}: {
-  nodes: StepNode[];
-  onStatusChange: (id: string, status: StepStatus) => void;
-  onDelete: (id: string) => void;
-  onEdit: (id: string) => void;
-}) => (
-  <ul className="space-y-3">
-    {nodes.map((node) => (
-      <li key={node.id} className="rounded-lg border border-slate-200 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className="break-words font-medium text-slate-900">{node.title}</p>
-            {node.description ? (
-              <p className="break-words whitespace-pre-wrap text-sm text-slate-600">
-                {node.description}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <StepStatusBadge status={node.status} />
-              <select
-                className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700"
-                value={node.status}
-                onChange={(event) => onStatusChange(node.id, event.target.value as StepStatus)}
-              >
-                {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              {node.dueDate ? <span>Due {formatDate(node.dueDate)}</span> : null}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-xs font-medium sm:justify-end">
-            <span className="text-slate-400">#{node.order}</span>
-            <button
-              type="button"
-              className="text-sky-700 hover:text-sky-900"
-              onClick={() => onEdit(node.id)}
-            >
-              Modifica
-            </button>
-            <button
-              type="button"
-              className="text-rose-600 hover:text-rose-700"
-              onClick={() => onDelete(node.id)}
-            >
-              Elimina
-            </button>
-          </div>
-        </div>
-        {node.children.length > 0 ? (
-          <div className="mt-3 border-l-2 border-slate-100 pl-4">
-            <StepTree
-              nodes={node.children}
-              onStatusChange={onStatusChange}
-              onDelete={onDelete}
-              onEdit={onEdit}
-            />
-          </div>
-        ) : null}
-      </li>
-    ))}
-  </ul>
-);
+const emptyStepForm = {
+  title: "",
+  description: "",
+  status: "todo" as StepStatus,
+  dueDate: "",
+  parentStepId: "",
+  order: 1,
+};
 
-/**
- * TaskDetailPage - Main task detail view component
- *
- * Renders task header, step tree, work logs, and three modal forms.
- * Heavy use of local state to manage modal interactions and form data.
- *
- * @param params - Next.js route params with task ID (Promise in Next.js 16+)
- */
+const emptyLogForm = {
+  type: "note" as WorkLogType,
+  message: "",
+  stepId: "",
+  tags: "",
+};
+
 const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
   const { id } = use(params);
   const router = useRouter();
+  const now = useNow();
+
   const {
     tasks,
     steps,
     workLogs,
     isHydrated,
+    loadError,
     createStep,
     createWorkLog,
     updateStep,
@@ -260,1389 +139,1081 @@ const TaskDetailPage = ({ params }: { params: Promise<{ id: string }> }) => {
     deleteStep,
     deleteTask,
     deleteWorkLog,
+    refresh,
   } = useTaskStore();
-  const { timerState, elapsedSeconds, startTimer, stopTimer } = useTimer();
+  const { timerState, elapsedMinutes, startTimer, clearTimer } = useTimer();
 
   const task = tasks.find((candidate) => candidate.id === id);
-  const taskSteps = useMemo(
-    () => steps.filter((step) => step.taskId === id),
-    [steps, id],
+  const taskSteps = useMemo(() => steps.filter((step) => step.taskId === id), [steps, id]);
+  const taskLogs = useMemo(() => workLogs.filter((log) => log.taskId === id), [workLogs, id]);
+
+  const [statusFilter, setStatusFilter] = useState<"tutti" | StepStatus>("tutti");
+  const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    status: "todo" as TaskStatus,
+    priority: "" as "" | NonNullable<Task["priority"]>,
+    tags: "",
+    dueDate: "",
+  });
+  const [stepDialog, setStepDialog] = useState<{ mode: "create" | "edit"; stepId?: string } | null>(
+    null,
   );
-  const taskLogs = useMemo(
-    () => workLogs.filter((log) => log.taskId === id),
-    [workLogs, id],
+  const [stepForm, setStepForm] = useState(emptyStepForm);
+  const [logDialog, setLogDialog] = useState<{ mode: "create" | "edit"; logId?: string } | null>(
+    null,
   );
+  const [logForm, setLogForm] = useState(emptyLogForm);
+  const [pendingStepDelete, setPendingStepDelete] = useState<Step | null>(null);
+  const [pendingLogDelete, setPendingLogDelete] = useState<string | null>(null);
+  const [isTaskDeleteOpen, setIsTaskDeleteOpen] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  // ============================================================================
-  // State Management - Step Form
-  // ============================================================================
-  const [newStepTitle, setNewStepTitle] = useState("");
-  const [newStepParentId, setNewStepParentId] = useState("");
-  const [newStepDescription, setNewStepDescription] = useState("");
-  const [newStepStatus, setNewStepStatus] = useState<StepStatus>("todo");
-  const [newStepDueDate, setNewStepDueDate] = useState("");
-  const [stepStatusFilter, setStepStatusFilter] = useState<"all" | StepStatus>("all");
-  const [editingStepId, setEditingStepId] = useState<string | null>(null);
-  const [editingStepTitle, setEditingStepTitle] = useState("");
-  const [editingStepDescription, setEditingStepDescription] = useState("");
-  const [editingStepStatus, setEditingStepStatus] = useState<StepStatus>("todo");
-  const [editingStepDueDate, setEditingStepDueDate] = useState("");
-  const [editingStepParentId, setEditingStepParentId] = useState("");
-  const [editingStepOriginalParentId, setEditingStepOriginalParentId] = useState("");
-  const [editingStepOrder, setEditingStepOrder] = useState(1);
+  const saveTask = useAsyncAction();
+  const saveStep = useAsyncAction();
+  const saveLog = useAsyncAction();
+  const removeStep = useAsyncAction();
+  const removeLog = useAsyncAction();
+  const removeTask = useAsyncAction();
+  const changeStatus = useAsyncAction();
 
-  // ============================================================================
-  // State Management - Work Log Form
-  // ============================================================================
-  const [newLogType, setNewLogType] = useState<WorkLogType>("note");
-  const [newLogMessage, setNewLogMessage] = useState("");
-  const [newLogStepId, setNewLogStepId] = useState("");
-  const [newLogTags, setNewLogTags] = useState("");
-  const defaultTaskTags = useMemo(() => formatTagsInput(task?.tags), [task?.tags]);
-  const [editingLogId, setEditingLogId] = useState<string | null>(null);
-  const [editingLogType, setEditingLogType] = useState<WorkLogType>("note");
-  const [editingLogMessage, setEditingLogMessage] = useState("");
-  const [editingLogStepId, setEditingLogStepId] = useState("");
-  const [editingLogTags, setEditingLogTags] = useState("");
+  const tree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
+  const flatSteps = useMemo(() => flattenTree(tree), [tree]);
 
-  // ============================================================================
-  // State Management - Timer
-  // ============================================================================
-  const [timerStepId, setTimerStepId] = useState("");
-  const [timerWarning, setTimerWarning] = useState<string | null>(null);
-  const [isTimerSaving, setIsTimerSaving] = useState(false);
-
-  // ============================================================================
-  // State Management - Modal Visibility
-  // ============================================================================
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [isStepModalOpen, setIsStepModalOpen] = useState(false);
-  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
-
-  // ============================================================================
-  // State Management - Task Edit Modal
-  // ============================================================================
-  const [taskTitleInput, setTaskTitleInput] = useState("");
-  const [taskDescriptionInput, setTaskDescriptionInput] = useState("");
-  const [taskStatusInput, setTaskStatusInput] = useState<TaskStatus>("todo");
-  const [taskPriorityInput, setTaskPriorityInput] = useState<Task["priority"]>();
-  const [taskTagsInput, setTaskTagsInput] = useState("");
-  const [taskDueDateInput, setTaskDueDateInput] = useState("");
-  const [taskFormError, setTaskFormError] = useState<string | null>(null);
-  const [isTaskSaving, setIsTaskSaving] = useState(false);
-
-  // ============================================================================
-  // State Management - Esc Warning System
-  // ============================================================================
-  // Text snapshots capture original values to detect unsaved changes.
-  // When user presses Esc, we compare current input against snapshot.
-  const taskTextSnapshot = useRef({ title: "", description: "", tags: "" });
-  const stepTextSnapshot = useRef({ title: "", description: "" });
-  const logTextSnapshot = useRef({ message: "", tags: "" });
-  const [taskEscWarning, setTaskEscWarning] = useState<string | null>(null);
-  const [stepEscWarning, setStepEscWarning] = useState<string | null>(null);
-  const [logEscWarning, setLogEscWarning] = useState<string | null>(null);
-
-  const logTagLimit = 3;
-
-  // ============================================================================
-  // Memos - Computed Data
-  // ============================================================================
-  const stepTree = useMemo(() => buildStepTree(taskSteps), [taskSteps]);
-  const filteredStepTree = useMemo(() => {
-    if (stepStatusFilter === "all") return stepTree;
-    return filterStepTree(stepTree, stepStatusFilter);
-  }, [stepTree, stepStatusFilter]);
-  const orderedSteps = useMemo(
-    () => [...taskSteps].sort((first, second) => first.order - second.order),
-    [taskSteps],
-  );
-  const editingStepOrderOptions = useMemo(() => {
-    if (!editingStepId) return [];
-    const parentId = editingStepParentId || undefined;
-    const siblingCount = taskSteps.filter(
-      (step) => step.parentStepId === parentId && step.id !== editingStepId,
-    ).length;
-    return Array.from({ length: siblingCount + 1 }, (_, index) => index + 1);
-  }, [taskSteps, editingStepParentId, editingStepId]);
-  // Collect all descendant IDs of the step being edited.
-  // Used to prevent circular references - can't make a step its own descendant.
-  // Traverses the tree recursively once the editing step is found.
-  const editingStepDescendantIds = useMemo(() => {
-    if (!editingStepId) return new Set<string>();
-    const collectDescendants = (nodes: StepNode[]): Set<string> => {
-      for (const node of nodes) {
-        if (node.id === editingStepId) {
-          const collectFrom = (current: StepNode, acc: Set<string>) => {
-            current.children.forEach((child) => {
-              acc.add(child.id);
-              collectFrom(child, acc);
-            });
-            return acc;
-          };
-          return collectFrom(node, new Set());
-        }
-        const nested = collectDescendants(node.children);
-        if (nested.size > 0) {
-          return nested;
-        }
+  // Filtering keeps a matching step's ancestors on screen so its place in the tree survives.
+  const visibleSteps = useMemo(() => {
+    if (statusFilter === "tutti") return flatSteps.map((row) => ({ ...row, dimmed: false }));
+    const matching = new Set(
+      flatSteps.filter((row) => row.step.status === statusFilter).map((row) => row.numbering),
+    );
+    const keep = new Set<string>();
+    matching.forEach((numbering) => {
+      const parts = numbering.split(".");
+      for (let index = 1; index <= parts.length; index += 1) {
+        keep.add(parts.slice(0, index).join("."));
       }
-      return new Set();
-    };
-    return collectDescendants(stepTree);
-  }, [editingStepId, stepTree]);
+    });
+    return flatSteps
+      .filter((row) => keep.has(row.numbering))
+      .map((row) => ({ ...row, dimmed: !matching.has(row.numbering) }));
+  }, [flatSteps, statusFilter]);
 
-  const totalSteps = taskSteps.length;
-  const completedSteps = taskSteps.filter((step) => step.status === "done").length;
+  const { taskActivity, logDurations } = useMemo(() => buildTaskActivity(workLogs), [workLogs]);
+
+  const isTimerHere = timerState.status === "running" && timerState.taskId === id;
+  const runningStepId = timerState.status === "running" ? timerState.stepId : undefined;
+  const runningStepTitle = timerState.status === "running" ? timerState.stepTitle : undefined;
+
+  const reading = useMemo(
+    () =>
+      task
+        ? readTask({
+            task,
+            steps: taskSteps,
+            workLogs: taskLogs,
+            running: isTimerHere ? { stepTitle: runningStepTitle, elapsedMinutes } : undefined,
+            now,
+          })
+        : null,
+    [task, taskSteps, taskLogs, isTimerHere, runningStepTitle, elapsedMinutes, now],
+  );
 
   const orderedLogs = useMemo(
-    () =>
-      [...taskLogs].sort(
-        (a, b) => new Date(b.timestamp).valueOf() - new Date(a.timestamp).valueOf(),
-      ),
+    () => [...taskLogs].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     [taskLogs],
   );
-  const isEditingStep = Boolean(editingStepId);
-  const isEditingLog = Boolean(editingLogId);
-  const isTimerRunning = timerState.status === "running";
-  const isTimerForTask = isTimerRunning && timerState.taskId === id;
-  const isTimerForOtherTask = isTimerRunning && timerState.taskId !== id;
-  const timerStepIdFromState = isRunningTimerState(timerState) ? timerState.stepId ?? "" : "";
 
-  const formatElapsed = (totalSeconds: number) => {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const pad = (value: number) => value.toString().padStart(2, "0");
-    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-  };
+  const editingStep = stepDialog?.stepId
+    ? taskSteps.find((step) => step.id === stepDialog.stepId)
+    : undefined;
+  const forbiddenParents = useMemo(
+    () => (stepDialog?.stepId ? descendantsOf(tree, stepDialog.stepId) : new Set<string>()),
+    [stepDialog?.stepId, tree],
+  );
 
-  // ============================================================================
-  // Form Reset Functions
-  // ============================================================================
-  const resetStepEditForm = () => {
-    setEditingStepId(null);
-    setEditingStepTitle("");
-    setEditingStepDescription("");
-    setEditingStepStatus("todo");
-    setEditingStepDueDate("");
-    setEditingStepParentId("");
-    setEditingStepOriginalParentId("");
-    setEditingStepOrder(1);
-    setStepEscWarning(null);
-  };
+  // ── Handlers ───────────────────────────────────────────────────────────────
 
-  const resetNewStepForm = () => {
-    setNewStepTitle("");
-    setNewStepParentId("");
-    setNewStepDescription("");
-    setNewStepStatus("todo");
-    setNewStepDueDate("");
-    setStepEscWarning(null);
-  };
-
-  const resetWorkLogEditForm = () => {
-    setEditingLogId(null);
-    setEditingLogType("note");
-    setEditingLogMessage("");
-    setEditingLogStepId("");
-    setEditingLogTags("");
-    setLogEscWarning(null);
-  };
-
-  const resetNewLogForm = () => {
-    setNewLogMessage("");
-    setNewLogStepId("");
-    setNewLogType("note");
-    setNewLogTags(defaultTaskTags);
-    setLogEscWarning(null);
-  };
-
-  const resetTaskEditForm = () => {
-    setTaskTitleInput("");
-    setTaskDescriptionInput("");
-    setTaskStatusInput("todo");
-    setTaskPriorityInput(undefined);
-    setTaskTagsInput("");
-    setTaskDueDateInput("");
-    setTaskFormError(null);
-    setTaskEscWarning(null);
-  };
-
-  const openTaskModal = () => {
+  const openTaskDialog = () => {
     if (!task) return;
-    setTaskTitleInput(task.title);
-    setTaskDescriptionInput(task.description ?? "");
-    setTaskStatusInput(task.status);
-    setTaskPriorityInput(task.priority);
-    setTaskTagsInput(task.tags?.join(", ") ?? "");
-    setTaskDueDateInput(toDateInputValue(task.dueDate));
-    setTaskFormError(null);
-    taskTextSnapshot.current = {
-      title: task.title.trim(),
-      description: (task.description ?? "").trim(),
-      tags: (task.tags?.join(", ") ?? "").trim(),
-    };
-    setTaskEscWarning(null);
-    setIsTaskModalOpen(true);
+    setTaskForm({
+      title: task.title,
+      description: task.description ?? "",
+      status: task.status,
+      priority: task.priority ?? "",
+      tags: task.tags?.join(", ") ?? "",
+      dueDate: task.dueDate ?? "",
+    });
+    saveTask.clearError();
+    setIsTaskDialogOpen(true);
   };
 
-  function closeTaskModal() {
-    resetTaskEditForm();
-    setIsTaskModalOpen(false);
-  }
-
-  // ============================================================================
-  // Form Handlers - Task Edit
-  // ============================================================================
-  const handleTaskEditSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleTaskSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!task) return;
-    const trimmedTitle = taskTitleInput.trim();
-    if (!trimmedTitle) {
-      setTaskFormError("Il titolo è obbligatorio.");
+    if (!task || !taskForm.title.trim()) return;
+    const tags = taskForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const saved = await saveTask.run(
+      () =>
+        updateTask(task.id, {
+          title: taskForm.title.trim(),
+          // Every key is present, so an emptied control clears the stored value. See UpdatePayload.
+          description: taskForm.description.trim() || null,
+          status: taskForm.status,
+          priority: taskForm.priority || null,
+          tags: tags.length > 0 ? tags : null,
+          dueDate: taskForm.dueDate || null,
+        }),
+      "Non sono riuscito a salvare il task.",
+    );
+    if (saved) setIsTaskDialogOpen(false);
+  };
+
+  const openStepDialog = (mode: "create" | "edit", step?: Step) => {
+    saveStep.clearError();
+    if (mode === "edit" && step) {
+      setStepForm({
+        title: step.title,
+        description: step.description ?? "",
+        status: step.status,
+        dueDate: step.dueDate ?? "",
+        parentStepId: step.parentStepId ?? "",
+        order: step.order,
+      });
+      setStepDialog({ mode, stepId: step.id });
       return;
     }
-    setIsTaskSaving(true);
-    setTaskFormError(null);
-    try {
-      const trimmedDescription = taskDescriptionInput.trim();
-      const tags =
-        taskTagsInput
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean) ?? [];
-      // Store due dates at UTC midnight to keep calendar math consistent across timezones.
-      // If we stored local time, a due date of "Jan 15" in Tokyo (UTC+9) would
-      // serialize to "Jan 14 15:00 UTC" and display as "Jan 14" in Los Angeles (UTC-8).
-      // Using UTC midnight ("Jan 15 00:00 UTC") ensures "Jan 15" displays everywhere.
-      const dueDateIso = taskDueDateInput
-        ? new Date(`${taskDueDateInput}T00:00:00.000Z`).toISOString()
-        : undefined;
-      await updateTask(task.id, {
-        title: trimmedTitle,
-        description: trimmedDescription || undefined,
-        status: taskStatusInput,
-        priority: taskPriorityInput,
-        tags: tags.length > 0 ? tags : undefined,
-        dueDate: dueDateIso,
-      });
-      closeTaskModal();
-    } catch (error) {
-      console.error(error);
-      setTaskFormError("Errore durante il salvataggio del task.");
-    } finally {
-      setIsTaskSaving(false);
-    }
+    setStepForm(emptyStepForm);
+    setStepDialog({ mode: "create" });
   };
 
-  // ============================================================================
-  // Effects - Cleanup and Esc Warning System
-  // ============================================================================
-  // Close modal if edited entity is deleted elsewhere
-  useEffect(() => {
-    if (editingStepId && !taskSteps.some((step) => step.id === editingStepId)) {
-      resetStepEditForm();
-      setIsStepModalOpen(false);
-    }
-  }, [editingStepId, taskSteps]);
-
-  useEffect(() => {
-    if (!isEditingStep) return;
-    const maxOrder = Math.max(1, editingStepOrderOptions.length || 1);
-    setEditingStepOrder((current) => Math.min(Math.max(current, 1), maxOrder));
-  }, [isEditingStep, editingStepOrderOptions.length]);
-
-  useEffect(() => {
-    if (editingLogId && !taskLogs.some((log) => log.id === editingLogId)) {
-      resetWorkLogEditForm();
-      setIsLogModalOpen(false);
-    }
-  }, [editingLogId, taskLogs]);
-
-  useEffect(() => {
-    if (!task) {
-      resetTaskEditForm();
-      setIsTaskModalOpen(false);
-    }
-  }, [task]);
-
-  useEffect(() => {
-    if (!newLogTags && defaultTaskTags) {
-      setNewLogTags(defaultTaskTags);
-    }
-  }, [defaultTaskTags, newLogTags]);
-
-  useEffect(() => {
-    if (!isTimerForTask) return;
-    setTimerStepId(timerStepIdFromState);
-  }, [isTimerForTask, timerStepIdFromState]);
-
-  // Esc key handler for task modal with unsaved change detection.
-  // Compares current input values against snapshot taken at modal open.
-  // Only shows warning if text fields have been modified.
-  useEffect(() => {
-    if (!isTaskModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      const snapshot = taskTextSnapshot.current;
-      const hasTextChanges =
-        taskTitleInput.trim() !== snapshot.title ||
-        taskDescriptionInput.trim() !== snapshot.description ||
-        taskTagsInput.trim() !== snapshot.tags;
-      if (!hasTextChanges && !isTaskSaving) {
-        event.preventDefault();
-        closeTaskModal();
-      } else if (hasTextChanges) {
-        setTaskEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isTaskModalOpen,
-    taskTitleInput,
-    taskDescriptionInput,
-    taskTagsInput,
-    isTaskSaving,
-    closeTaskModal,
-  ]);
-
-  useEffect(() => {
-    if (!isTaskModalOpen || !taskEscWarning) return;
-    const snapshot = taskTextSnapshot.current;
-    const hasTextChanges =
-      taskTitleInput.trim() !== snapshot.title ||
-      taskDescriptionInput.trim() !== snapshot.description ||
-      taskTagsInput.trim() !== snapshot.tags;
-    if (!hasTextChanges) {
-      setTaskEscWarning(null);
-    }
-  }, [isTaskModalOpen, taskEscWarning, taskTitleInput, taskDescriptionInput, taskTagsInput]);
-
-  useEffect(() => {
-    if (!isStepModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      const snapshot = stepTextSnapshot.current;
-      const currentTitle = (isEditingStep ? editingStepTitle : newStepTitle).trim();
-      const currentDescription = (
-        isEditingStep ? editingStepDescription : newStepDescription
-      ).trim();
-      const hasTextChanges =
-        currentTitle !== snapshot.title || currentDescription !== snapshot.description;
-      if (!hasTextChanges) {
-        event.preventDefault();
-        closeStepModal();
-      } else if (hasTextChanges) {
-        setStepEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isStepModalOpen,
-    isEditingStep,
-    editingStepTitle,
-    editingStepDescription,
-    newStepTitle,
-    newStepDescription,
-    closeStepModal,
-  ]);
-
-  useEffect(() => {
-    if (!isStepModalOpen || !stepEscWarning) return;
-    const snapshot = stepTextSnapshot.current;
-    const currentTitle = (isEditingStep ? editingStepTitle : newStepTitle).trim();
-    const currentDescription = (
-      isEditingStep ? editingStepDescription : newStepDescription
-    ).trim();
-    const hasTextChanges =
-      currentTitle !== snapshot.title || currentDescription !== snapshot.description;
-    if (!hasTextChanges) {
-      setStepEscWarning(null);
-    }
-  }, [
-    isStepModalOpen,
-    stepEscWarning,
-    isEditingStep,
-    editingStepTitle,
-    editingStepDescription,
-    newStepTitle,
-    newStepDescription,
-  ]);
-
-  useEffect(() => {
-    if (!isLogModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      const snapshot = logTextSnapshot.current;
-      const currentMessage = (isEditingLog ? editingLogMessage : newLogMessage).trim();
-      const currentTags = (isEditingLog ? editingLogTags : newLogTags).trim();
-      const hasTextChanges = currentMessage !== snapshot.message || currentTags !== snapshot.tags;
-      if (!hasTextChanges) {
-        event.preventDefault();
-        closeLogModal();
-      } else if (hasTextChanges) {
-        setLogEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isLogModalOpen,
-    isEditingLog,
-    editingLogMessage,
-    editingLogTags,
-    newLogMessage,
-    newLogTags,
-    closeLogModal,
-  ]);
-
-  useEffect(() => {
-    if (!isLogModalOpen || !logEscWarning) return;
-    const snapshot = logTextSnapshot.current;
-    const currentMessage = (isEditingLog ? editingLogMessage : newLogMessage).trim();
-    const currentTags = (isEditingLog ? editingLogTags : newLogTags).trim();
-    const hasTextChanges = currentMessage !== snapshot.message || currentTags !== snapshot.tags;
-    if (!hasTextChanges) {
-      setLogEscWarning(null);
-    }
-  }, [
-    isLogModalOpen,
-    logEscWarning,
-    isEditingLog,
-    editingLogMessage,
-    editingLogTags,
-    newLogMessage,
-    newLogTags,
-  ]);
-
-  if (!isHydrated) {
-    return (
-      <AuthGate>
-        <main className="mx-auto max-w-4xl p-6">
-          <p className="text-slate-600">Caricamento task...</p>
-        </main>
-      </AuthGate>
-    );
-  }
-
-  if (!task) {
-    return (
-      <AuthGate>
-        <main className="mx-auto max-w-4xl p-6">
-          <p className="text-slate-600">Task non trovata.</p>
-        </main>
-      </AuthGate>
-    );
-  }
-
-  // ============================================================================
-  // Form Handlers - Steps
-  // ============================================================================
-  const handleAddStep = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleStepSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!newStepTitle.trim()) return;
+    if (!task || !stepForm.title.trim()) return;
+    const parentStepId = stepForm.parentStepId || undefined;
 
-    const parentId = newStepParentId || undefined;
-    const dueDateIso = newStepDueDate
-      ? new Date(`${newStepDueDate}T00:00:00.000Z`).toISOString()
-      : undefined;
-    // Step order is scoped to siblings, so derive the next slot from the same parent.
+    if (stepDialog?.mode === "edit" && stepDialog.stepId) {
+      const editingId = stepDialog.stepId;
+      const siblings = taskSteps
+        .filter((step) => (step.parentStepId ?? "") === (parentStepId ?? "") && step.id !== editingId)
+        .sort((a, b) => a.order - b.order);
+      const nextOrder = Math.min(Math.max(stepForm.order, 1), siblings.length + 1);
+
+      const saved = await saveStep.run(async () => {
+        await updateStep(editingId, {
+          title: stepForm.title.trim(),
+          description: stepForm.description.trim() || null,
+          status: stepForm.status,
+          dueDate: stepForm.dueDate || null,
+          // Present-and-null means "move to top level"; the old code skipped the field entirely, so
+          // a substep could never be promoted back out.
+          parentStepId: parentStepId ?? null,
+          order: nextOrder,
+        });
+        // Renumber the sibling group the step lands in, so two steps never share a position.
+        const reordered = siblings.map((step) => step.id);
+        reordered.splice(nextOrder - 1, 0, editingId);
+        const updates = reordered
+          .map((stepId, index) => ({ id: stepId, order: index + 1 }))
+          .filter(
+            ({ id: stepId, order }) =>
+              stepId !== editingId && taskSteps.find((step) => step.id === stepId)?.order !== order,
+          );
+        if (updates.length > 0) await updateStepOrders(updates);
+      }, "Non sono riuscito a salvare lo step.");
+      if (saved) setStepDialog(null);
+      return;
+    }
+
     const siblingOrders = taskSteps
-      .filter((step) => step.parentStepId === parentId)
+      .filter((step) => (step.parentStepId ?? "") === (parentStepId ?? ""))
       .map((step) => step.order);
-    const nextOrder = siblingOrders.length > 0 ? Math.max(...siblingOrders) + 1 : 1;
-
-    await createStep({
-      taskId: task.id,
-      parentStepId: parentId,
-      title: newStepTitle.trim(),
-      description: newStepDescription.trim() || undefined,
-      status: newStepStatus,
-      order: nextOrder,
-      dueDate: dueDateIso,
-    });
-
-    resetNewStepForm();
-    setIsStepModalOpen(false);
+    const created = await saveStep.run(
+      () =>
+        createStep({
+          taskId: task.id,
+          parentStepId,
+          title: stepForm.title.trim(),
+          description: stepForm.description.trim() || undefined,
+          status: stepForm.status,
+          order: siblingOrders.length > 0 ? Math.max(...siblingOrders) + 1 : 1,
+          dueDate: stepForm.dueDate || undefined,
+        }),
+      "Non sono riuscito a creare lo step.",
+    );
+    if (created) setStepDialog(null);
   };
 
-  function closeStepModal() {
-    resetStepEditForm();
-    resetNewStepForm();
-    setIsStepModalOpen(false);
-  }
-
-  const openNewStepModal = () => {
-    resetStepEditForm();
-    resetNewStepForm();
-    stepTextSnapshot.current = { title: "", description: "" };
-    setStepEscWarning(null);
-    setIsStepModalOpen(true);
-  };
-
-  const startEditingStep = (stepId: string) => {
-    const step = taskSteps.find((candidate) => candidate.id === stepId);
-    if (!step) return;
-    setEditingStepId(stepId);
-    setEditingStepTitle(step.title);
-    setEditingStepDescription(step.description ?? "");
-    setEditingStepStatus(step.status);
-    setEditingStepDueDate(toDateInputValue(step.dueDate));
-    setEditingStepParentId(step.parentStepId ?? "");
-    setEditingStepOriginalParentId(step.parentStepId ?? "");
-    setEditingStepOrder(step.order);
-    stepTextSnapshot.current = {
-      title: step.title.trim(),
-      description: (step.description ?? "").trim(),
-    };
-    setStepEscWarning(null);
-    setIsStepModalOpen(true);
-  };
-
-  const handleEditStepSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLogSave = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editingStepId || !editingStepTitle.trim()) return;
-
-    const nextParentId = editingStepParentId || undefined;
-    const parentChanged = editingStepOriginalParentId !== (nextParentId ?? "");
-    const siblingSteps = taskSteps
-      .filter((step) => step.parentStepId === nextParentId && step.id !== editingStepId)
-      .sort((first, second) => first.order - second.order);
-    const maxOrder = siblingSteps.length + 1;
-    const nextOrder = Math.min(Math.max(editingStepOrder, 1), maxOrder);
-    const updatePayload: Partial<Step> = {
-      title: editingStepTitle.trim(),
-      description: editingStepDescription.trim() || undefined,
-      status: editingStepStatus,
-      parentStepId: nextParentId,
-      order: nextOrder,
-    };
-    const dueDateIso = editingStepDueDate
-      ? new Date(`${editingStepDueDate}T00:00:00.000Z`).toISOString()
-      : undefined;
-    updatePayload.dueDate = dueDateIso;
-    await updateStep(editingStepId, updatePayload);
-    const orderUpdates: Array<{ id: string; order: number }> = [];
-    const reorderedIds = siblingSteps.map((step) => step.id);
-    reorderedIds.splice(nextOrder - 1, 0, editingStepId);
-    reorderedIds.forEach((id, index) => {
-      if (id === editingStepId) return;
-      const step = taskSteps.find((candidate) => candidate.id === id);
-      const targetOrder = index + 1;
-      if (step && step.order !== targetOrder) {
-        orderUpdates.push({ id: step.id, order: targetOrder });
-      }
-    });
-    if (parentChanged) {
-      const previousParentId = editingStepOriginalParentId || undefined;
-      const previousSiblings = taskSteps
-        .filter((step) => step.parentStepId === previousParentId && step.id !== editingStepId)
-        .sort((first, second) => first.order - second.order);
-      previousSiblings.forEach((step, index) => {
-        const targetOrder = index + 1;
-        if (step.order !== targetOrder) {
-          orderUpdates.push({ id: step.id, order: targetOrder });
-        }
-      });
-    }
-    if (orderUpdates.length > 0) {
-      await updateStepOrders(orderUpdates);
-    }
-    resetStepEditForm();
-    setIsStepModalOpen(false);
-  };
-
-  // ============================================================================
-  // Form Handlers - Work Logs
-  // ============================================================================
-  const handleAddWorkLog = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!newLogMessage.trim()) return;
-    const tags = parseTagsInput(newLogTags);
-
-    await createWorkLog({
-      taskId: task.id,
-      stepId: newLogStepId || undefined,
-      message: newLogMessage.trim(),
-      tags: tags.length > 0 ? tags : [],
-      type: newLogType,
-      timestamp: new Date().toISOString(),
-    });
-
-    resetNewLogForm();
-    setIsLogModalOpen(false);
-  };
-
-  const openNewLogModal = () => {
-    resetWorkLogEditForm();
-    resetNewLogForm();
-    logTextSnapshot.current = {
-      message: "",
-      tags: (defaultTaskTags ?? "").trim(),
-    };
-    setLogEscWarning(null);
-    setIsLogModalOpen(true);
-  };
-
-  function closeLogModal() {
-    resetWorkLogEditForm();
-    resetNewLogForm();
-    setIsLogModalOpen(false);
-  }
-
-  const startEditingLog = (logId: string) => {
-    const log = taskLogs.find((candidate) => candidate.id === logId);
-    if (!log) return;
-    setEditingLogId(logId);
-    setEditingLogType(log.type);
-    setEditingLogMessage(log.message ?? "");
-    setEditingLogStepId(log.stepId ?? "");
-    setEditingLogTags(log.tags.join(", "));
-    logTextSnapshot.current = {
-      message: (log.message ?? "").trim(),
-      tags: log.tags.join(", ").trim(),
-    };
-    setLogEscWarning(null);
-    setIsLogModalOpen(true);
-  };
-
-  const handleEditLogSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!editingLogId) return;
-    const tags = parseTagsInput(editingLogTags);
-    await updateWorkLog(editingLogId, {
-      type: editingLogType,
-      message: editingLogMessage.trim() || undefined,
-      stepId: editingLogStepId || undefined,
-      tags,
-    });
-    resetWorkLogEditForm();
-    setIsLogModalOpen(false);
-  };
-
-  const handleDeleteLog = async (logId: string) => {
-    if (!confirm("Eliminare questo WorkLog?")) return;
-    await deleteWorkLog(logId);
-    if (editingLogId === logId) {
-      resetWorkLogEditForm();
-    }
-  };
-
-  // ============================================================================
-  // Handlers - Timer
-  // ============================================================================
-  const handleStartTimer = () => {
     if (!task) return;
-    setTimerWarning(null);
-    const step = orderedSteps.find((candidate) => candidate.id === timerStepId);
+    const tags = logForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+
+    if (logDialog?.mode === "edit" && logDialog.logId) {
+      const logId = logDialog.logId;
+      const saved = await saveLog.run(
+        () =>
+          updateWorkLog(logId, {
+            type: logForm.type,
+            message: logForm.message.trim() || null,
+            stepId: logForm.stepId || null,
+            tags,
+          }),
+        "Non sono riuscito a salvare la voce.",
+      );
+      if (saved) setLogDialog(null);
+      return;
+    }
+
+    if (!logForm.message.trim()) return;
+    const created = await saveLog.run(
+      () =>
+        createWorkLog({
+          taskId: task.id,
+          stepId: logForm.stepId || undefined,
+          message: logForm.message.trim(),
+          tags,
+          type: logForm.type,
+          timestamp: new Date().toISOString(),
+        }),
+      "Non sono riuscito a registrare la voce.",
+    );
+    if (created) setLogDialog(null);
+  };
+
+  const handleStart = (step?: Step) => {
+    if (!task) return;
+    setStartError(null);
     const result = startTimer({
       taskId: task.id,
       taskTitle: task.title,
       stepId: step?.id,
       stepTitle: step?.title,
     });
-    if (!result.ok) {
-      const message =
-        "error" in result && typeof result.error === "string"
-          ? result.error
-          : "Errore durante l'avvio del timer.";
-      setTimerWarning(message);
-    }
+    if (result.ok === false) setStartError(result.error);
   };
 
-  const handleStopTimer = async () => {
-    setTimerWarning(null);
-    if (!isTimerRunning) {
-      setTimerWarning("Nessun timer attivo da fermare.");
-      return;
-    }
-    if (!task || !isTimerForTask) {
-      setTimerWarning("Il timer attivo è su un altro task.");
-      return;
-    }
-    setIsTimerSaving(true);
-    try {
-      const result = stopTimer();
-      if (!result) {
-        setTimerWarning("Nessun timer attivo da fermare.");
-        return;
-      }
-      await createWorkLog({
-        taskId: result.taskId,
-        stepId: result.stepId,
-        tags: task.tags ?? [],
-        type: "stop",
-        timestamp: result.stoppedAt,
-        durationMinutes: result.durationMinutes,
-      });
-    } catch (error) {
-      console.error(error);
-      setTimerWarning("Errore durante il salvataggio del timer.");
-    } finally {
-      setIsTimerSaving(false);
-    }
+  const handleTaskDelete = async () => {
+    if (!task) return;
+    // Clear the session first: once the task is gone the work log can no longer be written against
+    // it, and a session pointing at a deleted task is exactly the state the global bar has to rescue.
+    if (isTimerHere) clearTimer();
+    const deleted = await removeTask.run(
+      () => deleteTask(task.id),
+      "Non sono riuscito a eliminare il task.",
+    );
+    if (deleted) router.push("/tasks");
   };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (!isHydrated) {
+    return (
+      <AppShell>
+        <main className="mx-auto w-full max-w-6xl px-6 py-10">
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">
+            Leggo il task…
+          </p>
+        </main>
+      </AppShell>
+    );
+  }
+
+  if (!task || !reading) {
+    return (
+      <AppShell>
+        <main className="mx-auto w-full max-w-3xl px-6 py-16">
+          <h1 className="font-prose text-verdict font-semibold text-ink">
+            Questo task non c&apos;è più
+            <span aria-hidden="true" className="text-ink-muted">
+              .
+            </span>
+          </h1>
+          <p className="mt-4 max-w-measure font-prose text-prose text-ink-muted">
+            {loadError
+              ? "Potrebbe anche essere che non sia riuscito a leggere i dati: in quel caso riprova fra un attimo."
+              : "È stato eliminato, oppure il link punta a qualcosa che non esiste."}
+          </p>
+          <div className="mt-8 flex gap-3">
+            <Link href="/tasks">
+              <Button variant="primary">Torna ai task</Button>
+            </Link>
+            {loadError ? <Button onClick={() => void refresh()}>Riprova</Button> : null}
+          </div>
+        </main>
+      </AppShell>
+    );
+  }
+
+  const dateline = (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+      <Link href="/tasks" className="text-ink-muted no-underline hover:text-ink">
+        ← Task
+      </Link>
+      <h1 className="font-prose text-title text-ink">{task.title}</h1>
+      <StatusChip status={task.status} />
+      {task.dueDate ? (
+        <span data-numeric className="text-ink-muted">
+          scade {formatDueDate(task.dueDate, { day: "numeric", month: "long" })}
+        </span>
+      ) : null}
+      {task.tags?.length ? <TagList tags={task.tags} /> : null}
+    </div>
+  );
 
   return (
-    <AuthGate>
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-6">
-      <div className="flex flex-wrap gap-3">
-        <Link
-          href="/"
-          className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:border-slate-400"
-        >
-          ← Torna alla Home
-        </Link>
-        <Link
-          href="/tasks"
-          className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:border-slate-400"
-        >
-          ← Lista Tasks
-        </Link>
-      </div>
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Task</p>
-            <h1 className="text-3xl font-bold text-slate-900">{task.title}</h1>
-            {task.description ? (
-              <p className="mt-2 whitespace-pre-wrap text-slate-600">{task.description}</p>
+    <AppShell>
+      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+        {loadError ? (
+          <div className="mb-8">
+            <ErrorNote onRetry={() => void refresh()}>
+              Non sono riuscito a rileggere i dati: quello che vedi potrebbe essere vecchio.
+            </ErrorNote>
+          </div>
+        ) : null}
+
+        <Verdict verdict={reading.verdict} dateline={dateline} headingAs="p">
+          <div className="flex flex-wrap items-center gap-3">
+            {!isTimerHere ? (
+              <Button variant="primary" onClick={() => handleStart(reading.nextStep)}>
+                {reading.nextStep ? `Avvia su «${reading.nextStep.title}»` : "Avvia una sessione"}
+              </Button>
             ) : null}
+            <Button onClick={openTaskDialog}>Modifica</Button>
+            <Button variant="quiet" onClick={() => setIsTaskDeleteOpen(true)}>
+              Elimina
+            </Button>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <StatusBadge status={task.status} />
-            <select
-              value={task.status}
-              onChange={(event) =>
-                updateTask(task.id, { status: event.target.value as TaskStatus })
-              }
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
-            >
-              {TASK_STATUS_OPTIONS.map((value) => (
-                <option key={value} value={value}>
-                  {value.replace("_", " ")}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="text-xs font-semibold text-slate-600 transition hover:text-slate-900"
-              onClick={openTaskModal}
-            >
-              Modifica Task
-            </button>
-            <button
-              type="button"
-              className="text-xs text-rose-600 hover:text-rose-700"
-              onClick={async () => {
-                if (confirm("Eliminare definitivamente questo task?")) {
-                  await deleteTask(task.id);
-                  router.push("/tasks");
-                }
-              }}
-            >
-              Elimina Task
-            </button>
-          </div>
-        </div>
-        <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
-          <div>
-            <dt className="font-medium text-slate-500">Progress</dt>
-            <dd className="text-lg font-semibold text-slate-900">
-              {completedSteps}/{totalSteps}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-500">Priority</dt>
-            <dd className="capitalize">{task.priority ?? "none"}</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-500">Due date</dt>
-            <dd>{formatDate(task.dueDate)}</dd>
-          </div>
-        </dl>
-        {task.tags && task.tags.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {task.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600"
-              >
-                #{tag}
-              </span>
-            ))}
+        </Verdict>
+
+        {startError ? (
+          <div className="mt-6">
+            <ErrorNote>{startError}</ErrorNote>
           </div>
         ) : null}
-        {isTaskModalOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
-            <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Task</p>
-                  <h2 className="text-2xl font-semibold text-slate-900">Modifica Task</h2>
-                </div>
-                <button
-                  className="text-slate-500 transition hover:text-slate-900"
-                  onClick={closeTaskModal}
-                  disabled={isTaskSaving}
-                >
-                  X
-                </button>
-              </div>
-              <form className="mt-6 space-y-4" onSubmit={handleTaskEditSubmit}>
-                {taskEscWarning ? (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    {taskEscWarning}
-                  </p>
-                ) : null}
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Titolo *</label>
-                  <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={taskTitleInput}
-                    onChange={(event) => setTaskTitleInput(event.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-600">Descrizione</label>
-                  <textarea
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    rows={3}
-                    value={taskDescriptionInput}
-                    onChange={(event) => setTaskDescriptionInput(event.target.value)}
-                    placeholder="Dettagli o note aggiuntive"
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Status</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={taskStatusInput}
-                      onChange={(event) => setTaskStatusInput(event.target.value as TaskStatus)}
-                    >
-                      {TASK_STATUS_OPTIONS.map((statusOption) => (
-                        <option key={statusOption} value={statusOption}>
-                          {statusOption.replace("_", " ")}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Priority</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={taskPriorityInput ?? ""}
-                      onChange={(event) =>
-                        setTaskPriorityInput(
-                          event.target.value
-                            ? (event.target.value as Task["priority"])
-                            : undefined,
-                        )
-                      }
-                    >
-                      <option value="">Nessuna</option>
-                      {TASK_PRIORITY_OPTIONS.map((priorityOption) => (
-                        <option key={priorityOption} value={priorityOption}>
-                          {priorityOption}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Due date</label>
-                    <input
-                      type="date"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={taskDueDateInput}
-                      onChange={(event) => setTaskDueDateInput(event.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-600">Tags (comma)</label>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={taskTagsInput}
-                      onChange={(event) => setTaskTagsInput(event.target.value)}
-                      placeholder="design,backend"
-                    />
-                  </div>
-                </div>
-                {taskFormError ? <p className="text-sm text-rose-600">{taskFormError}</p> : null}
-                <div className="flex items-center justify-end gap-3">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                    onClick={closeTaskModal}
-                    disabled={isTaskSaving}
-                  >
-                    Annulla
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                    disabled={isTaskSaving}
-                  >
-                    {isTaskSaving ? "Salvataggio..." : "Salva Task"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+
+        {task.description ? (
+          <p className="mt-8 max-w-measure font-prose text-prose text-ink-muted">
+            {task.description}
+          </p>
         ) : null}
-      </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Steps</h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-              <span>Filtro stato</span>
-              <select
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700"
-                value={stepStatusFilter}
-                onChange={(event) =>
-                  setStepStatusFilter(event.target.value as "all" | StepStatus)
-                }
+        <div className="mt-12 grid gap-12 lg:grid-cols-[1.15fr_1fr]">
+          {/* ── Step ───────────────────────────────────────────────────── */}
+          <section aria-labelledby="titolo-step">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-3">
+              <h2
+                id="titolo-step"
+                className="font-mono text-micro uppercase tracking-wider text-ink-muted"
               >
-                <option value="all">Tutti</option>
-                {STEP_STATUS_OPTIONS.map((statusOption) => (
-                  <option key={statusOption} value={statusOption}>
-                    {STEP_STATUS_LABELS[statusOption]}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
-                onClick={openNewStepModal}
-              >
-                + Nuovo Step
-              </button>
-            </div>
-          </div>
-          {taskSteps.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Ancora nessuno step, aggiungine uno.</p>
-          ) : filteredStepTree.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">
-              Nessuno step con lo stato selezionato.
-            </p>
-          ) : (
-            <div className="mt-4">
-              <StepTree
-                nodes={filteredStepTree}
-                onStatusChange={(id, newStatus) => updateStep(id, { status: newStatus })}
-                onDelete={(id) => {
-                  if (confirm("Eliminare questo step e i suoi substep?")) {
-                    void deleteStep(id);
-                  }
-                }}
-                onEdit={startEditingStep}
-              />
-            </div>
-          )}
-
-          {isStepModalOpen ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
-              <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Step</p>
-                    <h3 className="text-2xl font-semibold text-slate-900">
-                      {isEditingStep ? "Modifica Step" : "Nuovo Step"}
-                    </h3>
-                  </div>
-                  <button
-                    className="text-slate-500 transition hover:text-slate-900"
-                    onClick={closeStepModal}
-                  >
-                    X
-                  </button>
-                </div>
-                <form
-                  className="mt-6 space-y-4"
-                  onSubmit={isEditingStep ? handleEditStepSubmit : handleAddStep}
-                >
-                  {stepEscWarning ? (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      {stepEscWarning}
-                    </p>
-                  ) : null}
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Titolo *</label>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingStep ? editingStepTitle : newStepTitle}
-                      onChange={(event) =>
-                        isEditingStep
-                          ? setEditingStepTitle(event.target.value)
-                          : setNewStepTitle(event.target.value)
-                      }
-                      placeholder="Titolo step"
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Descrizione</label>
-                    <textarea
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      rows={3}
-                      value={isEditingStep ? editingStepDescription : newStepDescription}
-                      onChange={(event) =>
-                        isEditingStep
-                          ? setEditingStepDescription(event.target.value)
-                          : setNewStepDescription(event.target.value)
-                      }
-                      placeholder="Descrizione step"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Due date</label>
-                    <input
-                      type="date"
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingStep ? editingStepDueDate : newStepDueDate}
-                      onChange={(event) =>
-                        isEditingStep
-                          ? setEditingStepDueDate(event.target.value)
-                          : setNewStepDueDate(event.target.value)
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Step padre</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingStep ? editingStepParentId : newStepParentId}
-                      onChange={(event) =>
-                        isEditingStep
-                          ? setEditingStepParentId(event.target.value)
-                          : setNewStepParentId(event.target.value)
-                      }
-                    >
-                      <option value="">Step principale</option>
-                      {orderedSteps
-                        .filter((step) => {
-                          if (!isEditingStep) return true;
-                          if (step.id === editingStepId) return false;
-                          return !editingStepDescendantIds.has(step.id);
-                        })
-                        .map((step) => (
-                          <option key={step.id} value={step.id}>
-                            Substep di #{step.order}: {step.title}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Status</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingStep ? editingStepStatus : newStepStatus}
-                      onChange={(event) =>
-                        isEditingStep
-                          ? setEditingStepStatus(event.target.value as StepStatus)
-                          : setNewStepStatus(event.target.value as StepStatus)
-                      }
-                    >
-                      {Object.entries(STEP_STATUS_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {isEditingStep ? (
-                    <div>
-                      <label className="text-sm font-medium text-slate-700">Priorita</label>
-                      <select
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={editingStepOrder}
-                        onChange={(event) => setEditingStepOrder(Number(event.target.value))}
-                      >
-                        {editingStepOrderOptions.map((order) => (
-                          <option key={order} value={order}>
-                            {order}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                      onClick={closeStepModal}
-                    >
-                      Annulla
-                    </button>
-                    <button
-                      type="submit"
-                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                    >
-                      {isEditingStep ? "Salva modifiche" : "Salva Step"}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Timer</p>
-                <h3 className="text-lg font-semibold text-slate-900">Start/Stop</h3>
-              </div>
-              {isTimerForTask ? (
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  {formatElapsed(elapsedSeconds)}
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-4 grid gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Step</label>
+                Step
+              </h2>
+              <div className="flex items-center gap-4">
+                <label htmlFor="filtro-step" className="sr-only">
+                  Filtra gli step per stato
+                </label>
                 <select
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={timerStepId}
-                  onChange={(event) => setTimerStepId(event.target.value)}
-                  disabled={isTimerRunning}
+                  id="filtro-step"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                  className="border border-line bg-panel px-2 py-1 font-mono text-tiny text-ink-muted"
                 >
-                  <option value="">Nessun step</option>
-                  {orderedSteps.map((step) => (
-                    <option key={step.id} value={step.id}>
-                      #{step.order} - {step.title}
+                  <option value="tutti">Tutti</option>
+                  {STEP_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {STEP_STATUS_LABELS[status]}
                     </option>
                   ))}
                 </select>
-              </div>
-              {isTimerForTask ? (
-                <p className="text-xs text-slate-500">
-                  In corso dalle {new Date(timerState.startedAt).toLocaleTimeString()}.
-                </p>
-              ) : null}
-              {isTimerForOtherTask ? (
-                <p className="text-xs text-amber-700">
-                  C'è già un timer attivo su un altro task. Fermalo prima di avviarne uno nuovo.
-                </p>
-              ) : null}
-              {timerWarning ? (
-                <p className="text-xs text-rose-600">{timerWarning}</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
-                  onClick={handleStartTimer}
-                  disabled={isTimerRunning || isTimerSaving}
+                  onClick={() => openStepDialog("create")}
+                  className="font-mono text-tiny text-ink underline underline-offset-4"
                 >
-                  Avvia timer
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
-                  onClick={handleStopTimer}
-                  disabled={!isTimerForTask || isTimerSaving}
-                >
-                  {isTimerSaving ? "Salvataggio..." : "Stop timer"}
+                  Aggiungi
                 </button>
               </div>
             </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Work Log</h2>
-            <button
-              type="button"
-              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
-              onClick={openNewLogModal}
-            >
-              + Nuovo Log
-            </button>
-          </div>
-          {orderedLogs.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">
-              Nessun log ancora, registra una nota o sessione di lavoro.
-            </p>
-          ) : (
-            <ol className="mt-4 space-y-4">
-              {orderedLogs.map((log) => (
-                <li key={log.id} className="rounded-lg border border-slate-100 p-4">
-                  {log.tags.length > 0 ? (
-                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      {log.tags.slice(0, logTagLimit).map((tag) => (
-                        <span
-                          key={`${log.id}-tag-${tag}`}
-                          className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                      {log.tags.length > logTagLimit ? (
-                        <span className="rounded-full bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
-                          +{log.tags.length - logTagLimit}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span className="font-medium">{WORKLOG_TYPE_LABELS[log.type]}</span>
-                    <time>{new Date(log.timestamp).toLocaleString()}</time>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-700">{log.message ?? "-"}</p>
-                  {log.stepId ? (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Riferito allo step:{" "}
-                      {taskSteps.find((step) => step.id === log.stepId)?.title ?? log.stepId}
-                    </p>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold">
-                    <button
-                      type="button"
-                      className="text-sky-700 hover:text-sky-900"
-                      onClick={() => startEditingLog(log.id)}
-                    >
-                      Modifica
-                    </button>
-                    <button
-                      type="button"
-                      className="text-rose-600 hover:text-rose-700"
-                      onClick={() => handleDeleteLog(log.id)}
-                    >
-                      Elimina
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
 
-          {isLogModalOpen ? (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
-              <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Work Log</p>
-                    <h3 className="text-2xl font-semibold text-slate-900">
-                      {isEditingLog ? "Modifica Work Log" : "Nuovo Work Log"}
-                    </h3>
-                  </div>
-                  <button
-                    className="text-slate-500 transition hover:text-slate-900"
-                    onClick={closeLogModal}
-                  >
-                    X
-                  </button>
-                </div>
-                <form
-                  className="mt-6 space-y-4"
-                  onSubmit={isEditingLog ? handleEditLogSubmit : handleAddWorkLog}
-                >
-                  {logEscWarning ? (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                      {logEscWarning}
-                    </p>
-                  ) : null}
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Tipo</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingLog ? editingLogType : newLogType}
-                      onChange={(event) =>
-                        isEditingLog
-                          ? setEditingLogType(event.target.value as WorkLogType)
-                          : setNewLogType(event.target.value as WorkLogType)
-                      }
-                    >
-                      {Object.entries(WORKLOG_TYPE_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Messaggio</label>
-                    <textarea
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      rows={3}
-                      value={isEditingLog ? editingLogMessage : newLogMessage}
-                      onChange={(event) =>
-                        isEditingLog
-                          ? setEditingLogMessage(event.target.value)
-                          : setNewLogMessage(event.target.value)
-                      }
-                      placeholder="Descrivi cosa hai fatto..."
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Step</label>
-                    <select
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingLog ? editingLogStepId : newLogStepId}
-                      onChange={(event) =>
-                        isEditingLog
-                          ? setEditingLogStepId(event.target.value)
-                          : setNewLogStepId(event.target.value)
-                      }
-                    >
-                      <option value="">Nessun step</option>
-                      {orderedSteps.map((step) => (
-                        <option key={step.id} value={step.id}>
-                          #{step.order} - {step.title}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-slate-700">Tag (comma)</label>
-                    <input
-                      className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      value={isEditingLog ? editingLogTags : newLogTags}
-                      onChange={(event) =>
-                        isEditingLog
-                          ? setEditingLogTags(event.target.value)
-                          : setNewLogTags(event.target.value)
-                      }
-                      placeholder="cliente,progetto,attivita"
-                    />
-                    <p className="mt-2 text-xs text-slate-500">
-                      Usa i tag per raggruppare le attivita (es: cliente, progetto, tipo lavoro).
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                      onClick={closeLogModal}
-                    >
-                      Annulla
-                    </button>
-                    <button
-                      type="submit"
-                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                    >
-                      {isEditingLog ? "Salva Work Log" : "Registra Log"}
-                    </button>
-                  </div>
-                </form>
+            {changeStatus.error ? (
+              <div className="mt-4">
+                <ErrorNote>{changeStatus.error}</ErrorNote>
               </div>
+            ) : null}
+
+            {taskSteps.length === 0 ? (
+              <p className="mt-6 max-w-measure font-prose text-base text-ink-muted">
+                Non ci sono step, e va benissimo così: un task può restare una riga sola. Aggiungine
+                uno quando ti accorgi che il lavoro si divide in pezzi.
+              </p>
+            ) : visibleSteps.length === 0 ? (
+              <p className="mt-6 font-prose text-base text-ink-muted">Nessuno step in questo stato.</p>
+            ) : (
+              <ul className="mt-1">
+                {visibleSteps.map(({ step, depth, numbering, dimmed }) => {
+                  const isTimerStep = isTimerHere && runningStepId === step.id;
+                  return (
+                    <li
+                      key={step.id}
+                      className={`group flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line py-2.5 ${
+                        dimmed ? "opacity-60" : ""
+                      }`}
+                      style={{ paddingLeft: `${depth * 1.5}rem` }}
+                    >
+                      {/* The numbering gutter carries the depth. */}
+                      <span data-numeric className="w-10 shrink-0 font-mono text-tiny text-ink-muted">
+                        {numbering}
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={`font-prose text-base ${
+                            step.status === "done" ? "text-ink-muted line-through" : "text-ink"
+                          }`}
+                        >
+                          {step.title}
+                        </span>
+                        {step.description ? (
+                          <span className="block font-prose text-tiny text-ink-muted">
+                            {step.description}
+                          </span>
+                        ) : null}
+                        {/*
+                          The running badge and the due date live in the title column. Between the
+                          title and the select they were variable-width, so the select started at a
+                          different x on almost every row and the tree read as two columns.
+                        */}
+                        {isTimerStep || step.dueDate ? (
+                          <span className="mt-0.5 flex flex-wrap items-baseline gap-x-3">
+                            {isTimerStep ? (
+                              <span className="font-mono text-micro uppercase tracking-wider text-good">
+                                in corso
+                              </span>
+                            ) : null}
+                            {step.dueDate ? (
+                              <span data-numeric className="font-mono text-tiny text-ink-muted">
+                                scade{" "}
+                                {formatDueDate(step.dueDate, { day: "numeric", month: "short" })}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </span>
+
+                      {/* Fixed-width cluster: every row's select sits on the same left edge. */}
+                      <span className="flex shrink-0 items-baseline gap-3">
+                        <label htmlFor={`stato-${step.id}`} className="sr-only">
+                          Stato di {step.title}
+                        </label>
+                        <select
+                          id={`stato-${step.id}`}
+                          value={step.status}
+                          disabled={changeStatus.pending}
+                          onChange={(event) =>
+                            void changeStatus.run(
+                              () => updateStep(step.id, { status: event.target.value as StepStatus }),
+                              "Non sono riuscito a cambiare lo stato.",
+                            )
+                          }
+                          className="w-[7.5rem] border border-line bg-panel px-1.5 py-1 font-mono text-micro uppercase tracking-wider text-ink-muted disabled:opacity-50"
+                        >
+                          {STEP_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {STEP_STATUS_LABELS[status]}
+                            </option>
+                          ))}
+                        </select>
+
+                        <span className="w-12 shrink-0">
+                          {!isTimerHere && step.status !== "done" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleStart(step)}
+                              className="font-mono text-micro uppercase tracking-wider text-ink-muted underline underline-offset-4 hover:text-ink"
+                            >
+                              Avvia
+                            </button>
+                          ) : null}
+                        </span>
+
+                        {/*
+                          Editing and deleting are rare next to changing a status or starting a
+                          session; leaving all four permanently visible put thirty-two controls on a
+                          tree of eight rows. They stay reachable by keyboard through focus-within.
+                        */}
+                        <span className="flex w-[9.5rem] justify-end gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => openStepDialog("edit", step)}
+                            aria-label={`Modifica ${step.title}`}
+                            className="font-mono text-micro uppercase tracking-wider text-ink-muted underline underline-offset-4 hover:text-ink"
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingStepDelete(step)}
+                            aria-label={`Elimina ${step.title}`}
+                            className="font-mono text-micro uppercase tracking-wider text-ink-muted underline underline-offset-4 hover:text-bad"
+                          >
+                            Elimina
+                          </button>
+                        </span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {/* ── Work log ───────────────────────────────────────────────── */}
+          <section aria-labelledby="titolo-log">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-3">
+              <h2
+                id="titolo-log"
+                className="font-mono text-micro uppercase tracking-wider text-ink-muted"
+              >
+                Work log
+                {reading.minutesSpent > 0 ? (
+                  <span data-numeric className="ml-3 normal-case tracking-normal text-ink">
+                    {formatMinutes(reading.minutesSpent)} in tutto
+                  </span>
+                ) : null}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setLogForm({ ...emptyLogForm, tags: task.tags?.join(", ") ?? "" });
+                  saveLog.clearError();
+                  setLogDialog({ mode: "create" });
+                }}
+                className="font-mono text-tiny text-ink underline underline-offset-4"
+              >
+                Aggiungi
+              </button>
             </div>
-          ) : null}
+
+            {orderedLogs.length === 0 ? (
+              <p className="mt-6 max-w-measure font-prose text-base text-ink-muted">
+                Ancora niente. Avvia una sessione dallo step su cui stai lavorando, oppure annota a
+                mano cosa hai fatto.
+              </p>
+            ) : (
+              <ol className="mt-1">
+                {orderedLogs.map((log) => {
+                  const minutes = logDurations.get(log.id);
+                  const step = log.stepId
+                    ? taskSteps.find((candidate) => candidate.id === log.stepId)
+                    : undefined;
+                  const isToday = instantDayKey(log.timestamp) === todayKey(now);
+                  return (
+                    <li key={log.id} className="group border-b border-line py-3">
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <time
+                          dateTime={log.timestamp}
+                          data-numeric
+                          className="font-mono text-tiny text-ink-muted"
+                        >
+                          {isToday
+                            ? "oggi"
+                            : formatDueDate(instantDayKey(log.timestamp), {
+                                day: "numeric",
+                                month: "short",
+                              })}{" "}
+                          {formatInstantTime(log.timestamp)}
+                        </time>
+                        {minutes ? (
+                          <span data-numeric className="font-mono text-tiny font-medium text-ink">
+                            {formatMinutes(minutes)}
+                          </span>
+                        ) : null}
+                        {step ? (
+                          <span className="font-mono text-tiny text-ink-muted">su {step.title}</span>
+                        ) : null}
+                        <span className="ml-auto flex gap-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLogForm({
+                                type: log.type,
+                                message: log.message ?? "",
+                                stepId: log.stepId ?? "",
+                                tags: log.tags.join(", "),
+                              });
+                              saveLog.clearError();
+                              setLogDialog({ mode: "edit", logId: log.id });
+                            }}
+                            className="font-mono text-micro uppercase tracking-wider text-ink-muted underline underline-offset-4 hover:text-ink"
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingLogDelete(log.id)}
+                            className="font-mono text-micro uppercase tracking-wider text-ink-muted underline underline-offset-4 hover:text-bad"
+                          >
+                            Elimina
+                          </button>
+                        </span>
+                      </div>
+                      {log.message ? (
+                        <p className="mt-1 max-w-measure font-prose text-base text-ink">
+                          {log.message}
+                        </p>
+                      ) : null}
+                      {log.tags.length > 0 ? (
+                        <div className="mt-1">
+                          <TagList tags={log.tags} limit={4} />
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
         </div>
-      </section>
-    </main>
-    </AuthGate>
+
+        {/* ── Dialoghi ─────────────────────────────────────────────────── */}
+
+        <Dialog
+          open={isTaskDialogOpen}
+          title="Modifica task"
+          hasUnsavedChanges={
+            taskForm.title !== task.title ||
+            taskForm.description !== (task.description ?? "") ||
+            taskForm.tags !== (task.tags?.join(", ") ?? "")
+          }
+          onClose={() => setIsTaskDialogOpen(false)}
+          footer={
+            <>
+              <Button
+                variant="quiet"
+                onClick={() => setIsTaskDialogOpen(false)}
+                disabled={saveTask.pending}
+              >
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                form="form-task"
+                variant="primary"
+                pending={saveTask.pending}
+                pendingLabel="Salvo…"
+              >
+                Salva
+              </Button>
+            </>
+          }
+        >
+          <form id="form-task" onSubmit={handleTaskSave} className="flex flex-col gap-5">
+            {saveTask.error ? <ErrorNote>{saveTask.error}</ErrorNote> : null}
+            <Field label="Titolo" required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={taskForm.title}
+                  onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })}
+                  required
+                  autoFocus
+                />
+              )}
+            </Field>
+            <Field label="Descrizione">
+              {(props) => (
+                <TextArea
+                  {...props}
+                  rows={3}
+                  value={taskForm.description}
+                  onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })}
+                />
+              )}
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Stato">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={taskForm.status}
+                    onChange={(event) =>
+                      setTaskForm({ ...taskForm, status: event.target.value as TaskStatus })
+                    }
+                  >
+                    {TASK_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {TASK_STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Priorità">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={taskForm.priority}
+                    onChange={(event) =>
+                      setTaskForm({
+                        ...taskForm,
+                        priority: event.target.value as typeof taskForm.priority,
+                      })
+                    }
+                  >
+                    <option value="">Nessuna</option>
+                    {PRIORITIES.map((priority) => (
+                      <option key={priority.value} value={priority.value}>
+                        {priority.label}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Scadenza" hint="Svuota il campo per togliere la scadenza.">
+                {(props) => (
+                  <DateInput
+                    {...props}
+                    value={taskForm.dueDate}
+                    onChange={(event) => setTaskForm({ ...taskForm, dueDate: event.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Tag" hint="Separati da virgola.">
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    value={taskForm.tags}
+                    onChange={(event) => setTaskForm({ ...taskForm, tags: event.target.value })}
+                  />
+                )}
+              </Field>
+            </div>
+          </form>
+        </Dialog>
+
+        <Dialog
+          open={stepDialog !== null}
+          title={stepDialog?.mode === "edit" ? "Modifica step" : "Nuovo step"}
+          hasUnsavedChanges={
+            stepDialog?.mode === "create"
+              ? stepForm.title.trim() !== "" || stepForm.description.trim() !== ""
+              : stepForm.title !== (editingStep?.title ?? "") ||
+                stepForm.description !== (editingStep?.description ?? "")
+          }
+          onClose={() => setStepDialog(null)}
+          footer={
+            <>
+              <Button variant="quiet" onClick={() => setStepDialog(null)} disabled={saveStep.pending}>
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                form="form-step"
+                variant="primary"
+                pending={saveStep.pending}
+                pendingLabel="Salvo…"
+              >
+                Salva
+              </Button>
+            </>
+          }
+        >
+          <form id="form-step" onSubmit={handleStepSave} className="flex flex-col gap-5">
+            {saveStep.error ? <ErrorNote>{saveStep.error}</ErrorNote> : null}
+            <Field label="Titolo" required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={stepForm.title}
+                  onChange={(event) => setStepForm({ ...stepForm, title: event.target.value })}
+                  required
+                  autoFocus
+                />
+              )}
+            </Field>
+            <Field label="Descrizione">
+              {(props) => (
+                <TextArea
+                  {...props}
+                  rows={2}
+                  value={stepForm.description}
+                  onChange={(event) => setStepForm({ ...stepForm, description: event.target.value })}
+                />
+              )}
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Stato">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={stepForm.status}
+                    onChange={(event) =>
+                      setStepForm({ ...stepForm, status: event.target.value as StepStatus })
+                    }
+                  >
+                    {STEP_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {STEP_STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Scadenza">
+                {(props) => (
+                  <DateInput
+                    {...props}
+                    value={stepForm.dueDate}
+                    onChange={(event) => setStepForm({ ...stepForm, dueDate: event.target.value })}
+                  />
+                )}
+              </Field>
+              <Field label="Sta sotto" hint="«Nessuno» lo riporta al primo livello.">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={stepForm.parentStepId}
+                    onChange={(event) =>
+                      setStepForm({ ...stepForm, parentStepId: event.target.value })
+                    }
+                  >
+                    <option value="">Nessuno</option>
+                    {flatSteps
+                      .filter(
+                        ({ step }) => step.id !== stepDialog?.stepId && !forbiddenParents.has(step.id),
+                      )
+                      .map(({ step, numbering }) => (
+                        <option key={step.id} value={step.id}>
+                          {numbering} · {step.title}
+                        </option>
+                      ))}
+                  </Select>
+                )}
+              </Field>
+              {stepDialog?.mode === "edit" ? (
+                <Field label="Posizione" hint="Fra i suoi pari livello.">
+                  {(props) => (
+                    <TextInput
+                      {...props}
+                      type="number"
+                      min={1}
+                      value={stepForm.order}
+                      onChange={(event) =>
+                        setStepForm({ ...stepForm, order: Number(event.target.value) || 1 })
+                      }
+                    />
+                  )}
+                </Field>
+              ) : null}
+            </div>
+          </form>
+        </Dialog>
+
+        <Dialog
+          open={logDialog !== null}
+          title={logDialog?.mode === "edit" ? "Modifica voce" : "Nuova voce di work log"}
+          hasUnsavedChanges={logDialog?.mode === "create" && logForm.message.trim() !== ""}
+          onClose={() => setLogDialog(null)}
+          footer={
+            <>
+              <Button variant="quiet" onClick={() => setLogDialog(null)} disabled={saveLog.pending}>
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                form="form-log"
+                variant="primary"
+                pending={saveLog.pending}
+                pendingLabel="Salvo…"
+              >
+                Salva
+              </Button>
+            </>
+          }
+        >
+          <form id="form-log" onSubmit={handleLogSave} className="flex flex-col gap-5">
+            {saveLog.error ? <ErrorNote>{saveLog.error}</ErrorNote> : null}
+            <Field label="Cosa hai fatto" required={logDialog?.mode === "create"}>
+              {(props) => (
+                <TextArea
+                  {...props}
+                  rows={3}
+                  value={logForm.message}
+                  onChange={(event) => setLogForm({ ...logForm, message: event.target.value })}
+                  placeholder="Chiuse le quotazioni con tre fornitori."
+                  autoFocus
+                />
+              )}
+            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Tipo">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={logForm.type}
+                    onChange={(event) =>
+                      setLogForm({ ...logForm, type: event.target.value as WorkLogType })
+                    }
+                  >
+                    {WORKLOG_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Step">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={logForm.stepId}
+                    onChange={(event) => setLogForm({ ...logForm, stepId: event.target.value })}
+                  >
+                    <option value="">Nessuno</option>
+                    {flatSteps.map(({ step, numbering }) => (
+                      <option key={step.id} value={step.id}>
+                        {numbering} · {step.title}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <Field label="Tag" hint="Separati da virgola.">
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={logForm.tags}
+                  onChange={(event) => setLogForm({ ...logForm, tags: event.target.value })}
+                />
+              )}
+            </Field>
+          </form>
+        </Dialog>
+
+        <Dialog
+          open={pendingStepDelete !== null}
+          title="Eliminare questo step?"
+          onClose={() => setPendingStepDelete(null)}
+          footer={
+            <>
+              <Button
+                variant="quiet"
+                onClick={() => setPendingStepDelete(null)}
+                disabled={removeStep.pending}
+              >
+                Annulla
+              </Button>
+              <Button
+                variant="danger"
+                pending={removeStep.pending}
+                pendingLabel="Elimino…"
+                onClick={async () => {
+                  if (!pendingStepDelete) return;
+                  const done = await removeStep.run(
+                    () => deleteStep(pendingStepDelete.id),
+                    "Non sono riuscito a eliminare lo step.",
+                  );
+                  if (done) setPendingStepDelete(null);
+                }}
+              >
+                Elimina
+              </Button>
+            </>
+          }
+        >
+          {removeStep.error ? <ErrorNote>{removeStep.error}</ErrorNote> : null}
+          <p className="font-prose text-prose text-ink">
+            «{pendingStepDelete?.title}» sparisce insieme ai suoi substep e alle voci di work log
+            registrate su di lui.
+          </p>
+        </Dialog>
+
+        <Dialog
+          open={pendingLogDelete !== null}
+          title="Eliminare questa voce?"
+          onClose={() => setPendingLogDelete(null)}
+          footer={
+            <>
+              <Button
+                variant="quiet"
+                onClick={() => setPendingLogDelete(null)}
+                disabled={removeLog.pending}
+              >
+                Annulla
+              </Button>
+              <Button
+                variant="danger"
+                pending={removeLog.pending}
+                pendingLabel="Elimino…"
+                onClick={async () => {
+                  if (!pendingLogDelete) return;
+                  const done = await removeLog.run(
+                    () => deleteWorkLog(pendingLogDelete),
+                    "Non sono riuscito a eliminare la voce.",
+                  );
+                  if (done) setPendingLogDelete(null);
+                }}
+              >
+                Elimina
+              </Button>
+            </>
+          }
+        >
+          {removeLog.error ? <ErrorNote>{removeLog.error}</ErrorNote> : null}
+          <p className="font-prose text-prose text-ink">
+            I minuti registrati in questa voce escono dal totale del task e dal report.
+          </p>
+        </Dialog>
+
+        <Dialog
+          open={isTaskDeleteOpen}
+          title="Eliminare questo task?"
+          onClose={() => setIsTaskDeleteOpen(false)}
+          footer={
+            <>
+              <Button
+                variant="quiet"
+                onClick={() => setIsTaskDeleteOpen(false)}
+                disabled={removeTask.pending}
+              >
+                Annulla
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleTaskDelete}
+                pending={removeTask.pending}
+                pendingLabel="Elimino…"
+              >
+                Elimina definitivamente
+              </Button>
+            </>
+          }
+        >
+          {removeTask.error ? <ErrorNote>{removeTask.error}</ErrorNote> : null}
+          <p className="font-prose text-prose text-ink">
+            «{task.title}» sparisce, e con lui{" "}
+            <span data-numeric className="font-mono">
+              {taskSteps.length}
+            </span>{" "}
+            step e{" "}
+            <span data-numeric className="font-mono">
+              {taskLogs.length}
+            </span>{" "}
+            voci di work log, per un totale di{" "}
+            <span data-numeric className="font-mono">
+              {formatMinutes(taskActivity.get(task.id)?.totalMinutes ?? 0)}
+            </span>
+            .
+          </p>
+          {isTimerHere ? (
+            <p className="mt-3 font-prose text-base text-warn">
+              C&apos;è una sessione in corso su questo task: verrà scartata senza essere registrata.
+            </p>
+          ) : null}
+        </Dialog>
+      </main>
+    </AppShell>
   );
 };
 

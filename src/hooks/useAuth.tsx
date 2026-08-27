@@ -21,6 +21,46 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+/**
+ * Turns a Firebase auth failure into something a person can act on.
+ *
+ * Two reasons this is not just cosmetic. First, the raw strings are developer output —
+ * "Firebase: Error (auth/invalid-credential)." tells the user nothing about what to do next.
+ * Second, and less obvious: Firebase distinguishes "no such account" from "wrong password", and
+ * rendering that distinction turns the sign-in form into an oracle for whether a given address has
+ * an account here. Both collapse into one message on purpose.
+ */
+const describeAuthError = (error: unknown): string => {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: unknown }).code)
+      : "";
+
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Email o password non corrette.";
+    case "auth/invalid-email":
+      return "Questo indirizzo email non è valido.";
+    case "auth/user-disabled":
+      return "Questo account è disattivato.";
+    case "auth/email-already-in-use":
+      return "Esiste già un account con questa email. Prova ad accedere.";
+    case "auth/weak-password":
+      return "La password è troppo corta: servono almeno sei caratteri.";
+    case "auth/too-many-requests":
+      return "Troppi tentativi. Aspetta qualche minuto e riprova.";
+    case "auth/network-request-failed":
+      return "Nessuna connessione. Controlla la rete e riprova.";
+    case "auth/operation-not-allowed":
+      return "L'accesso con email e password non è abilitato su questo progetto Firebase.";
+    default:
+      return "Non è andata. Riprova fra un momento.";
+  }
+};
+
 const SIGNUPS_DISABLED = process.env.NEXT_PUBLIC_DISABLE_SIGNUPS === "true";
 const SIGNUP_WHITELIST = new Set(
   (process.env.NEXT_PUBLIC_SIGNUP_WHITELIST ?? "")
@@ -60,7 +100,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Unable to sign in");
+      setError(describeAuthError(authError));
       // Re-throw the error after storing it so callers can handle both
       // UI feedback (via context.error) and local error boundaries.
       throw authError;
@@ -69,15 +109,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = useCallback(async (email: string, password: string) => {
     setError(null);
+    // Checked before the try, not inside it: routing this through the same catch as a Firebase
+    // failure would run it through describeAuthError, which has no code to match and would replace
+    // the specific reason with the generic one.
+    if (!isSignupAllowed(email)) {
+      const message = "Le registrazioni sono chiuse per questo indirizzo.";
+      setError(message);
+      throw new Error(message);
+    }
     try {
-      if (!isSignupAllowed(email)) {
-        const message = "Sign-ups are currently disabled";
-        setError(message);
-        throw new Error(message);
-      }
       await createUserWithEmailAndPassword(firebaseAuth, email, password);
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Unable to sign up");
+      setError(describeAuthError(authError));
       // Re-throw the error after storing it so callers can handle both
       // UI feedback (via context.error) and local error boundaries.
       throw authError;
@@ -89,7 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await signOut(firebaseAuth);
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Unable to sign out");
+      setError(describeAuthError(authError));
       // Re-throw the error after storing it so callers can handle both
       // UI feedback (via context.error) and local error boundaries.
       throw authError;
