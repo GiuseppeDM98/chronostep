@@ -2,13 +2,216 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ChronoStep design tokens.
+ *
+ * Colour strategy: RESTRAINED. Neutrals carry the surface; colour carries one thing only —
+ * judgement. Green means on track, amber means it wants attention, red means behind. Nothing is
+ * tinted for decoration, so when something goes coloured the user can trust it means something.
+ * The primary action is therefore ink, not a brand hue: a coloured button would spend the one
+ * signal the interface has.
+ *
+ * The type system splits by register rather than by size: Literata (serif) is the human voice —
+ * verdicts, prose, descriptions, notes — and JetBrains Mono is the instrument — every duration,
+ * count, date, time, status code and control label. That split is the identity; remove all the
+ * content and the alternation of the two faces still reads as this product.
+ *
+ * One rule about text colour is load-bearing: THERE IS NO TEXT TOKEN THAT FAILS WCAG AA.
+ * `--ink-muted` is the lightest colour any text may use and it clears 4.5:1 in both themes.
+ * Anything lighter exists as `--line` / `--line-strong` and may only draw rules and borders. The
+ * previous build used a 2.56:1 grey for real information; making that unrepresentable in the token
+ * set is the fix that survives future edits.
+ */
+
 :root {
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background-color: #f7f7f9;
-  color: #0f172a;
+  color-scheme: light;
+
+  /* Surfaces — faintly cool, so the sentiment hues stay legible as signal against them. */
+  --ground: oklch(0.976 0.004 255);
+  --panel: oklch(1 0 0);
+  --sunken: oklch(0.952 0.005 255);
+  --line: oklch(0.893 0.006 255);
+  --line-strong: oklch(0.795 0.008 255);
+
+  /* Text. Both clear 4.5:1 on --ground and on --panel. */
+  --ink: oklch(0.22 0.014 260);
+  --ink-muted: oklch(0.442 0.012 260);
+
+  /* Judgement. Text-weight values first, then the tints used as fields behind them. */
+  --good: oklch(0.505 0.128 155);
+  --good-field: oklch(0.945 0.036 155);
+  --warn: oklch(0.508 0.115 68);
+  --warn-field: oklch(0.951 0.042 78);
+  --bad: oklch(0.515 0.178 26);
+  --bad-field: oklch(0.949 0.032 26);
+
+  /* Inverted surface, used by the primary action and the running-timer bar. */
+  --inverse-ground: oklch(0.22 0.014 260);
+  --inverse-ink: oklch(0.975 0.003 260);
+
+  --focus: oklch(0.55 0.17 258);
+
+  --shadow-panel: 0 1px 2px oklch(0.22 0.014 260 / 0.06), 0 8px 24px oklch(0.22 0.014 260 / 0.05);
 }
 
-body {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ground: oklch(0.176 0.008 260);
+  --panel: oklch(0.214 0.009 260);
+  --sunken: oklch(0.146 0.008 260);
+  --line: oklch(0.308 0.010 260);
+  --line-strong: oklch(0.415 0.012 260);
+
+  --ink: oklch(0.962 0.003 260);
+  --ink-muted: oklch(0.738 0.008 260);
+
+  --good: oklch(0.805 0.148 155);
+  --good-field: oklch(0.295 0.055 155);
+  --warn: oklch(0.822 0.138 78);
+  --warn-field: oklch(0.305 0.052 78);
+  --bad: oklch(0.722 0.168 22);
+  --bad-field: oklch(0.302 0.062 22);
+
+  --inverse-ground: oklch(0.962 0.003 260);
+  --inverse-ink: oklch(0.176 0.008 260);
+
+  --focus: oklch(0.72 0.15 258);
+
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px oklch(0 0 0 / 0.28);
+}
+
+/*
+ * The un-toggled state follows the operating system, because the honest default for a desk tool
+ * used through the working day is the light the room is already in. The explicit choice is stamped
+ * on <html> as data-theme and always wins over this block.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --ground: oklch(0.176 0.008 260);
+    --panel: oklch(0.214 0.009 260);
+    --sunken: oklch(0.146 0.008 260);
+    --line: oklch(0.308 0.010 260);
+    --line-strong: oklch(0.415 0.012 260);
+
+    --ink: oklch(0.962 0.003 260);
+    --ink-muted: oklch(0.738 0.008 260);
+
+    --good: oklch(0.805 0.148 155);
+    --good-field: oklch(0.295 0.055 155);
+    --warn: oklch(0.822 0.138 78);
+    --warn-field: oklch(0.305 0.052 78);
+    --bad: oklch(0.722 0.168 22);
+    --bad-field: oklch(0.302 0.062 22);
+
+    --inverse-ground: oklch(0.962 0.003 260);
+    --inverse-ink: oklch(0.176 0.008 260);
+
+    --focus: oklch(0.72 0.15 258);
+
+    --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px oklch(0 0 0 / 0.28);
+  }
+}
+
+@layer base {
+  html {
+    /* Long verdict sentences break far better with this on, and it costs nothing. */
+    text-wrap: pretty;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-prose), Georgia, "Times New Roman", serif;
+    font-synthesis-weight: none;
+  }
+
+  /*
+   * Browser surfaces. These ship with defaults that belong to no design system, and they are the
+   * cheapest tell that a page was assembled rather than built.
+   */
+  ::selection {
+    background-color: var(--good-field);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Never leave a focusable element with no ring: the calendar grid used to have 35 of them. */
+  [tabindex]:focus-visible,
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  select {
+    caret-color: var(--focus);
+    background-color: var(--panel);
+    color: var(--ink);
+  }
+
+  ::placeholder {
+    color: var(--ink-muted);
+    opacity: 1;
+  }
+
+  a {
+    color: var(--ink);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+
+  a:hover {
+    text-decoration-color: var(--ink-muted);
+  }
+
+  * {
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--line-strong);
+    border: 3px solid var(--ground);
+    border-radius: 999px;
+  }
+
+  /* Every figure in this interface is compared against another figure. */
+  .tnum,
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,266 +1,264 @@
 /**
- * ReportPage - Monthly time report by task
+ * Report — how the month's hours divide across tasks.
  *
- * Aggregates work logs into monthly summaries showing:
- * - Total minutes per task
- * - Note highlights
- * - Tag breakdown
- *
- * Filters by year, month, and tag.
+ * Sessions are paired over the COMPLETE history and only then narrowed to the selected period, so a
+ * session begun on the last evening of a month and stopped after midnight still reports its
+ * minutes. Pairing the filtered slice instead — which is what this page used to do — made such a
+ * session worth zero minutes in every month, because its start and its stop never appeared in the
+ * same slice.
  */
 "use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import AuthGate from "../../components/AuthGate";
+import AppShell from "../../components/AppShell";
+import Verdict from "../../components/Verdict";
+import { ErrorNote, TagList } from "../../components/controls";
+import { useNow } from "../../hooks/useNow";
 import { useTaskStore } from "../../hooks/useTaskStore";
+import { aOrAd, formatMinutes, instantDayKey, todayKey } from "../../lib/dates";
 import {
   buildMonthlyReportSummary,
   buildTaskTagSummary,
   groupWorkLogsByTag,
 } from "../../lib/insights";
+import { readSlice } from "../../lib/verdicts";
 
-const MONTH_OPTIONS = [
-  { value: "all", label: "Tutti i mesi" },
-  { value: "1", label: "Gennaio" },
-  { value: "2", label: "Febbraio" },
-  { value: "3", label: "Marzo" },
-  { value: "4", label: "Aprile" },
-  { value: "5", label: "Maggio" },
-  { value: "6", label: "Giugno" },
-  { value: "7", label: "Luglio" },
-  { value: "8", label: "Agosto" },
-  { value: "9", label: "Settembre" },
-  { value: "10", label: "Ottobre" },
-  { value: "11", label: "Novembre" },
-  { value: "12", label: "Dicembre" },
+const MONTHS = [
+  "Gennaio",
+  "Febbraio",
+  "Marzo",
+  "Aprile",
+  "Maggio",
+  "Giugno",
+  "Luglio",
+  "Agosto",
+  "Settembre",
+  "Ottobre",
+  "Novembre",
+  "Dicembre",
 ];
 
-// Format minutes into compact hours/minutes label for report totals.
-// Omits zero values (e.g., "2h 30m", "45m", "3h" but not "0h 0m").
-const formatMinutes = (totalMinutes: number) => {
-  const rounded = Math.max(0, Math.round(totalMinutes));
-  const hours = Math.floor(rounded / 60);
-  const minutes = rounded % 60;
-  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
-};
-
-/**
- * ReportPage - Monthly work log report
- *
- * Displays aggregated time tracking data grouped by task,
- * with filter controls for year, month, and tag.
- */
 const ReportPage = () => {
-  const { workLogs, tasks, isHydrated } = useTaskStore();
-  const [selectedYear, setSelectedYear] = useState<string>("all");
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
-  const [selectedTag, setSelectedTag] = useState<string>("all");
-  const logsByTag = useMemo(() => groupWorkLogsByTag(workLogs), [workLogs]);
+  const { workLogs, tasks, isHydrated, loadError, refresh } = useTaskStore();
+  const now = useNow();
+  const today = todayKey(now);
 
-  const taskLookup = useMemo(() => {
-    const map = new Map(tasks.map((task) => [task.id, task.title]));
-    return map;
-  }, [tasks]);
+  const [year, setYear] = useState(today.slice(0, 4));
+  const [month, setMonth] = useState(today.slice(5, 7));
+  const [tag, setTag] = useState("tutti");
+
+  const logsByTag = useMemo(() => groupWorkLogsByTag(workLogs), [workLogs]);
+  const taskTitles = useMemo(() => new Map(tasks.map((task) => [task.id, task.title])), [tasks]);
 
   const availableYears = useMemo(() => {
-    const set = new Set<number>();
-    workLogs.forEach((log) => {
-      set.add(new Date(log.timestamp).getFullYear());
-    });
-    return Array.from(set).sort((a, b) => b - a);
-  }, [workLogs]);
+    const years = new Set(workLogs.map((log) => instantDayKey(log.timestamp).slice(0, 4)));
+    years.add(today.slice(0, 4));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [today, workLogs]);
 
   const availableTags = useMemo(
     () => Array.from(logsByTag.keys()).sort((a, b) => a.localeCompare(b)),
     [logsByTag],
   );
 
-  // Pre-filter by tag before applying year/month filters
-  // (more efficient than filtering by all three at once)
-  const tagFilteredLogs = useMemo(
-    () => (selectedTag === "all" ? workLogs : logsByTag.get(selectedTag) ?? []),
-    [logsByTag, selectedTag, workLogs],
+  const isInScope = useMemo(() => {
+    const tagged = tag === "tutti" ? null : new Set((logsByTag.get(tag) ?? []).map((log) => log.id));
+    return (log: { id: string; timestamp: string }) => {
+      const dayKey = instantDayKey(log.timestamp);
+      if (dayKey.slice(0, 4) !== year) return false;
+      if (month !== "tutti" && dayKey.slice(5, 7) !== month) return false;
+      if (tagged && !tagged.has(log.id)) return false;
+      return true;
+    };
+  }, [logsByTag, month, tag, year]);
+
+  const scopedLogs = useMemo(() => workLogs.filter(isInScope), [isInScope, workLogs]);
+  const entries = useMemo(
+    () => buildMonthlyReportSummary(workLogs, isInScope),
+    [isInScope, workLogs],
+  );
+  const tagSummary = useMemo(() => buildTaskTagSummary(scopedLogs), [scopedLogs]);
+
+  const scopeLabel = useMemo(() => {
+    const monthName = month === "tutti" ? "" : MONTHS[Number(month) - 1].toLowerCase();
+    const monthLabel = monthName ? `${aOrAd(monthName)} ${monthName} ` : "";
+    const tagLabel = tag === "tutti" ? "" : ` su #${tag}`;
+    return `${monthLabel}${year}${tagLabel}`;
+  }, [month, tag, year]);
+
+  const verdict = useMemo(
+    () => readSlice(workLogs, scopedLogs, scopeLabel),
+    [scopeLabel, scopedLogs, workLogs],
   );
 
-  // Apply year and month filters to tag-filtered logs
-  const filteredLogs = useMemo(
-    () =>
-      tagFilteredLogs.filter((log) => {
-        const date = new Date(log.timestamp);
-        const yearPass =
-          selectedYear === "all" || date.getFullYear().toString() === selectedYear;
-        const monthPass =
-          selectedMonth === "all" || (date.getMonth() + 1).toString() === selectedMonth;
-        return yearPass && monthPass;
-      }),
-    [selectedMonth, selectedYear, tagFilteredLogs],
-  );
-
-  const reportEntries = useMemo(
-    () => buildMonthlyReportSummary(filteredLogs),
-    [filteredLogs],
-  );
-  const tagSummaryByTask = useMemo(
-    () => buildTaskTagSummary(filteredLogs),
-    [filteredLogs],
-  );
-
-  const totalMinutes = useMemo(
-    () => reportEntries.reduce((sum, entry) => sum + entry.totalMinutes, 0),
-    [reportEntries],
-  );
+  const totalMinutes = entries.reduce((sum, entry) => sum + entry.totalMinutes, 0);
+  const filterClasses = "border border-line bg-panel px-2 py-1.5 font-mono text-tiny text-ink";
 
   return (
-    <AuthGate>
-      <main className="mx-auto w-full max-w-4xl p-6">
-        <header className="mb-6 space-y-3">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-slate-400"
-          >
-            Torna alla Home
-          </Link>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">Chronostep</p>
-            <h1 className="text-3xl font-bold text-slate-900">Report mensile</h1>
-            <p className="text-sm text-slate-500">
-              Riepilogo ore e highlights delle note per task.
-            </p>
+    <AppShell>
+      <main className="mx-auto w-full max-w-4xl px-6 py-10">
+        {loadError ? (
+          <div className="mb-8">
+            <ErrorNote onRetry={() => void refresh()}>Non sono riuscito a leggere i dati.</ErrorNote>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-            <p className="font-semibold text-slate-900">Tag: perché usarli</p>
-            <p className="mt-1 text-sm text-slate-600">
-              Usa tag come cliente, progetto o tipo lavoro per isolare le attività nel report.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <select
-              value={selectedYear}
-              onChange={(event) => setSelectedYear(event.target.value)}
-              className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-            >
-              <option value="all">Tutti gli anni</option>
-              {availableYears.map((year) => (
-                <option key={year} value={year.toString()}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedMonth}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-              className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-            >
-              {MONTH_OPTIONS.map((month) => (
-                <option key={month.value} value={month.value}>
-                  {month.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedTag}
-              onChange={(event) => setSelectedTag(event.target.value)}
-              className="rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-700"
-              disabled={availableTags.length === 0}
-            >
-              <option value="all">Tutti i tag</option>
-              {availableTags.length === 0 ? (
-                <option value="" disabled>
-                  Nessun tag
-                </option>
-              ) : (
-                availableTags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-        </header>
+        ) : null}
 
         {!isHydrated ? (
-          <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-            Caricamento dati locali.
-          </div>
-        ) : reportEntries.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-            Nessun log nel periodo selezionato.
-          </div>
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">Leggo i dati…</p>
         ) : (
-          <section className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-              <span className="font-semibold text-slate-900">
-                Totale mese: {formatMinutes(totalMinutes)}
-              </span>
-              <span className="ml-3 text-xs text-slate-500">
-                {reportEntries.length} task con attivita
-              </span>
-            </div>
-            {reportEntries.map((entry) => {
-              const summary = tagSummaryByTask.get(entry.taskId);
-              return (
-                <article
-                  key={entry.taskId}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          <>
+            <Verdict verdict={verdict}>
+              <div className="flex flex-wrap items-center gap-3">
+                <label htmlFor="report-anno" className="sr-only">
+                  Anno
+                </label>
+                <select
+                  id="report-anno"
+                  value={year}
+                  onChange={(event) => setYear(event.target.value)}
+                  className={filterClasses}
                 >
-                  {summary && summary.tags.length > 0 ? (
-                    <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      {summary.tags.map((tag) => (
-                        <span
-                          key={`${entry.taskId}-tag-${tag}`}
-                          className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600"
-                        >
-                          #{tag}
-                        </span>
-                      ))}
-                      {summary.overflowCount > 0 ? (
-                        <span className="rounded-full bg-slate-50 px-2 py-0.5 font-semibold text-slate-500">
-                          +{summary.overflowCount}
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">
-                        {taskLookup.get(entry.taskId) ?? "Task sconosciuto"}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {entry.logCount} log  {formatMinutes(entry.totalMinutes)}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/tasks/${encodeURIComponent(entry.taskId)}`}
-                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                  {availableYears.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="report-mese" className="sr-only">
+                  Mese
+                </label>
+                <select
+                  id="report-mese"
+                  value={month}
+                  onChange={(event) => setMonth(event.target.value)}
+                  className={filterClasses}
+                >
+                  <option value="tutti">Tutto l&apos;anno</option>
+                  {MONTHS.map((label, index) => (
+                    <option key={label} value={String(index + 1).padStart(2, "0")}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+
+                <label htmlFor="report-tag" className="sr-only">
+                  Tag
+                </label>
+                <select
+                  id="report-tag"
+                  value={tag}
+                  onChange={(event) => setTag(event.target.value)}
+                  disabled={availableTags.length === 0}
+                  className={`${filterClasses} disabled:opacity-50`}
+                >
+                  <option value="tutti">Tutti i tag</option>
+                  {availableTags.map((value) => (
+                    <option key={value} value={value}>
+                      #{value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </Verdict>
+
+            {entries.length > 0 ? (
+              <table className="mt-10 w-full border-collapse text-left">
+                <caption className="sr-only">
+                  Ore registrate per task {scopeLabel}
+                </caption>
+                <thead>
+                  <tr className="border-b border-line-strong">
+                    <th
+                      scope="col"
+                      className="pb-2 font-mono text-micro uppercase tracking-wider text-ink-muted"
                     >
-                      Apri task
-                    </Link>
-                  </div>
-                  {entry.highlights.length > 0 ? (
-                    <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                      {entry.highlights.map((highlight, index) => (
-                        <li key={`${entry.taskId}-highlight-${index}`} className="flex gap-2">
-                          <span className="text-slate-400"></span>
-                          <span>{highlight}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Nessuna nota rilevante per questo task.
-                    </p>
-                  )}
-                </article>
-              );
-            })}
-          </section>
+                      Task
+                    </th>
+                    <th
+                      scope="col"
+                      className="pb-2 text-right font-mono text-micro uppercase tracking-wider text-ink-muted"
+                    >
+                      Voci
+                    </th>
+                    <th
+                      scope="col"
+                      className="pb-2 text-right font-mono text-micro uppercase tracking-wider text-ink-muted"
+                    >
+                      Tempo
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => {
+                    const summary = tagSummary.get(entry.taskId);
+                    return (
+                      <tr key={entry.taskId} className="border-b border-line align-top">
+                        <td className="py-3 pr-4">
+                          <Link
+                            href={`/tasks/${entry.taskId}`}
+                            className="font-prose text-base text-ink no-underline hover:underline"
+                          >
+                            {taskTitles.get(entry.taskId) ?? "Task eliminato"}
+                          </Link>
+                          {summary && summary.tags.length > 0 ? (
+                            <div className="mt-1">
+                              <TagList tags={summary.tags} />
+                            </div>
+                          ) : null}
+                          {entry.highlights.length > 0 ? (
+                            <ul className="mt-2 flex flex-col gap-1">
+                              {entry.highlights.map((highlight) => (
+                                <li
+                                  key={highlight}
+                                  className="max-w-measure font-prose text-tiny text-ink-muted"
+                                >
+                                  {highlight}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </td>
+                        <td
+                          data-numeric
+                          className="py-3 text-right font-mono text-tiny text-ink-muted"
+                        >
+                          {entry.logCount}
+                        </td>
+                        <td
+                          data-numeric
+                          className="py-3 text-right font-mono text-small font-medium text-ink"
+                        >
+                          {formatMinutes(entry.totalMinutes)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th
+                      scope="row"
+                      className="pt-3 text-left font-mono text-micro uppercase tracking-wider text-ink-muted"
+                    >
+                      Totale
+                    </th>
+                    <td />
+                    <td
+                      data-numeric
+                      className="pt-3 text-right font-mono text-small font-semibold text-ink"
+                    >
+                      {formatMinutes(totalMinutes)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            ) : null}
+          </>
         )}
       </main>
-    </AuthGate>
+    </AppShell>
   );
 };
 

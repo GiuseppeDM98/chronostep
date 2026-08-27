@@ -1,521 +1,425 @@
 /**
- * TasksPage - Task list with search, filter, and sort
+ * The task list.
  *
- * Features:
- * - Search by title, description, and tags
- * - Status filter (default: "Active" = exclude done tasks)
- * - Priority sorting
- * - Step completion progress per task
- *
- * Uses memos to optimize filtering/sorting performance.
+ * A browsing screen, so the verdict is short and the rows carry the weight. Rows are ruled lines,
+ * not cards: a card per task turns a list of forty into forty containers, and the granularity range
+ * here runs from a one-line reminder to an eight-step project — a shape that has to hold both.
  */
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import AuthGate from "../../components/AuthGate";
-import type { Task, TaskStatus } from "../../lib/types";
+import { useMemo, useState } from "react";
+import AppShell from "../../components/AppShell";
+import Dialog from "../../components/Dialog";
+import Verdict from "../../components/Verdict";
+import {
+  Button,
+  DateInput,
+  ErrorNote,
+  Field,
+  Select,
+  StatusChip,
+  TagList,
+  TextArea,
+  TextInput,
+  TASK_STATUS_LABELS,
+} from "../../components/controls";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useNow } from "../../hooks/useNow";
 import { useTaskStore } from "../../hooks/useTaskStore";
+import { formatDueDate, formatMinutes } from "../../lib/dates";
+import { buildStepsByTask, buildTaskActivity, getTaskStepSummary } from "../../lib/insights";
+import { readTaskList } from "../../lib/verdicts";
+import type { Task, TaskStatus } from "../../lib/types";
 
-type StatusFilter = "all" | "active" | TaskStatus;
+type StatusFilter = "attivi" | "tutti" | TaskStatus;
 
 const STATUS_FILTERS: Array<{ label: string; value: StatusFilter }> = [
-  { label: "Active", value: "active" },
-  { label: "All", value: "all" },
-  { label: "Todo", value: "todo" },
-  { label: "In Progress", value: "in_progress" },
-  { label: "Done", value: "done" },
-  { label: "Blocked", value: "blocked" },
+  { label: "Attivi", value: "attivi" },
+  { label: "Tutti", value: "tutti" },
+  { label: "Da fare", value: "todo" },
+  { label: "In corso", value: "in_progress" },
+  { label: "Fermi", value: "blocked" },
+  { label: "Fatti", value: "done" },
 ];
 
-const STATUS_STYLES: Record<TaskStatus, string> = {
-  todo: "bg-slate-100 text-slate-700",
-  in_progress: "bg-amber-100 text-amber-800",
-  done: "bg-emerald-100 text-emerald-800",
-  blocked: "bg-rose-100 text-rose-800",
-};
-
-const PRIORITY_STYLES: Record<NonNullable<Task["priority"]>, string> = {
-  low: "text-slate-500",
-  medium: "text-amber-600",
-  high: "text-rose-600",
-};
-const PRIORITY_ORDER: Record<NonNullable<Task["priority"]>, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-};
-
 const TASK_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
-const TASK_PRIORITIES: Array<NonNullable<Task["priority"]>> = ["low", "medium", "high"];
+const PRIORITIES: Array<{ value: NonNullable<Task["priority"]>; label: string }> = [
+  { value: "high", label: "Alta" },
+  { value: "medium", label: "Media" },
+  { value: "low", label: "Bassa" },
+];
+const PRIORITY_ORDER: Record<NonNullable<Task["priority"]>, number> = { high: 0, medium: 1, low: 2 };
 
-// Normalize priority labels for consistent UI copy.
-const formatPriority = (priority?: Task["priority"]) => {
-  if (!priority) return "No priority";
-  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)}`;
+const emptyForm = {
+  title: "",
+  description: "",
+  status: "todo" as TaskStatus,
+  priority: "" as "" | NonNullable<Task["priority"]>,
+  tags: "",
+  dueDate: "",
 };
 
-/**
- * TaskCard - Single task display in list view
- *
- * Shows task title, description, status badge, step progress,
- * priority, and tags. Wraps in Link for navigation.
- *
- * @param task - Task to display
- * @param totalSteps - Count of all steps for this task
- * @param completedSteps - Count of done steps
- * @param onDelete - Handler for delete action
- */
-const TaskCard = ({
-  task,
-  totalSteps,
-  completedSteps,
-  onDelete,
-}: {
-  task: Task;
-  totalSteps: number;
-  completedSteps: number;
-  onDelete: (taskId: string) => void;
-}) => (
-  <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-1 hover:border-slate-400 hover:shadow-md">
-    <Link href={`/tasks/${task.id}`} className="block">
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-900">{task.title}</h3>
-          {task.description ? (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>
-          ) : null}
-        </div>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_STYLES[task.status]}`}
-        >
-          {task.status.replace("_", " ")}
-        </span>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-600">
-        <div>
-          <span className="font-semibold text-slate-900">{completedSteps}</span>/
-          <span>{totalSteps}</span> Steps
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-slate-500">
-            Priority
-          </span>
-          <span className={`font-medium ${task.priority ? PRIORITY_STYLES[task.priority] : "text-slate-400"}`}>
-            {formatPriority(task.priority)}
-          </span>
-        </div>
-
-        {task.tags && task.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {task.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-500"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <p className="mt-4 text-sm font-semibold text-slate-500">Apri dettagli →</p>
-    </Link>
-    <div className="mt-4 flex justify-end">
-      <button
-        type="button"
-        className="text-sm text-rose-600 hover:text-rose-700"
-        onClick={() => onDelete(task.id)}
-      >
-        Elimina task
-      </button>
-    </div>
-  </article>
-);
-
-/**
- * TasksPage - Main task list page
- *
- * Displays all tasks with search, status filter (default: Active),
- * and priority sorting. Provides new task creation and deletion.
- */
 const TasksPage = () => {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const { tasks, steps, workLogs, isHydrated, loadError, createTask, deleteTask, refresh } =
+    useTaskStore();
+  const now = useNow();
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("attivi");
   const [searchQuery, setSearchQuery] = useState("");
-  const { tasks, steps, isHydrated, createTask, deleteTask } = useTaskStore();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<TaskStatus>("todo");
-  const [priority, setPriority] = useState<Task["priority"]>();
-  const [tagsInput, setTagsInput] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const modalTextSnapshot = useRef({ title: "", description: "", tags: "" });
-  const [escWarning, setEscWarning] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [pendingDelete, setPendingDelete] = useState<Task | null>(null);
 
-  const stepsByTask = useMemo(() => {
-    // Pre-compute step totals per task to keep render logic simple.
-    const map = new Map<string, { total: number; done: number }>();
-    tasks.forEach((task) => {
-      map.set(task.id, { total: 0, done: 0 });
-    });
+  const create = useAsyncAction();
+  const remove = useAsyncAction();
 
-    steps.forEach((stepItem) => {
-      const current = map.get(stepItem.taskId) ?? { total: 0, done: 0 };
-      const updated = {
-        total: current.total + 1,
-        done: current.done + (stepItem.status === "done" ? 1 : 0),
-      };
-      map.set(stepItem.taskId, updated);
-    });
+  const stepsByTask = useMemo(() => buildStepsByTask(steps), [steps]);
+  const { taskActivity } = useMemo(() => buildTaskActivity(workLogs), [workLogs]);
 
-    return map;
-  }, [steps, tasks]);
+  const visibleTasks = useMemo(() => {
+    const byStatus =
+      statusFilter === "attivi"
+        ? tasks.filter((task) => task.status !== "done")
+        : statusFilter === "tutti"
+        ? tasks
+        : tasks.filter((task) => task.status === statusFilter);
 
-  const filteredTasks = useMemo(() => {
-    const byStatus = (() => {
-      if (statusFilter === "active") {
-        return tasks.filter((task) => task.status !== "done");
-      }
-      if (statusFilter === "all") {
-        return tasks;
-      }
-      return tasks.filter((task) => task.status === statusFilter);
-    })();
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    const bySearch = normalizedQuery
-      ? byStatus.filter((task) => {
-          const haystack = [
-            task.title,
-            task.description ?? "",
-            task.tags?.join(" ") ?? "",
-          ]
+    const needle = searchQuery.trim().toLowerCase();
+    const bySearch = needle
+      ? byStatus.filter((task) =>
+          [task.title, task.description ?? "", task.tags?.join(" ") ?? ""]
             .join(" ")
-            .toLowerCase();
-          return haystack.includes(normalizedQuery);
-        })
+            .toLowerCase()
+            .includes(needle),
+        )
       : byStatus;
-    // Sort by priority first, then title to keep the list predictable.
-    return [...bySearch].sort((taskA, taskB) => {
-      const priorityA =
-        taskA.priority !== undefined ? PRIORITY_ORDER[taskA.priority] : Number.POSITIVE_INFINITY;
-      const priorityB =
-        taskB.priority !== undefined ? PRIORITY_ORDER[taskB.priority] : Number.POSITIVE_INFINITY;
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-      return taskA.title.localeCompare(taskB.title);
+
+    return [...bySearch].sort((a, b) => {
+      const priorityA = a.priority ? PRIORITY_ORDER[a.priority] : 3;
+      const priorityB = b.priority ? PRIORITY_ORDER[b.priority] : 3;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return a.title.localeCompare(b.title);
     });
   }, [statusFilter, tasks, searchQuery]);
 
-  const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setStatus("todo");
-    setPriority(undefined);
-    setTagsInput("");
-    setDueDate("");
-    setFormError(null);
-    setEscWarning(null);
+  const verdict = useMemo(
+    () => readTaskList(visibleTasks, tasks, now),
+    [visibleTasks, tasks, now],
+  );
+
+  const formIsDirty =
+    form.title.trim() !== "" || form.description.trim() !== "" || form.tags.trim() !== "";
+
+  const closeCreate = () => {
+    setIsCreateOpen(false);
+    setForm(emptyForm);
+    create.clearError();
   };
 
-  const closeModal = () => {
-    setIsModalOpen(false);
-    resetForm();
-  };
-
-  const openModal = () => {
-    modalTextSnapshot.current = {
-      title: title.trim(),
-      description: description.trim(),
-      tags: tagsInput.trim(),
-    };
-    setEscWarning(null);
-    setIsModalOpen(true);
-  };
-
-  useEffect(() => {
-    if (!isModalOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      const snapshot = modalTextSnapshot.current;
-      const hasTextChanges =
-        title.trim() !== snapshot.title ||
-        description.trim() !== snapshot.description ||
-        tagsInput.trim() !== snapshot.tags;
-      if (!hasTextChanges && !isSaving) {
-        event.preventDefault();
-        closeModal();
-      } else if (hasTextChanges) {
-        setEscWarning("Non puoi chiudere la finestra, ci sono modifiche non salvate.");
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isModalOpen, title, description, tagsInput, isSaving, closeModal]);
-
-  useEffect(() => {
-    if (!isModalOpen || !escWarning) return;
-    const snapshot = modalTextSnapshot.current;
-    const hasTextChanges =
-      title.trim() !== snapshot.title ||
-      description.trim() !== snapshot.description ||
-      tagsInput.trim() !== snapshot.tags;
-    if (!hasTextChanges) {
-      setEscWarning(null);
-    }
-  }, [isModalOpen, escWarning, title, description, tagsInput]);
-
-  const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!title.trim()) {
-      setFormError("Il titolo è obbligatorio.");
-      return;
-    }
-    setIsSaving(true);
-    setFormError(null);
-    try {
-      const tags =
-        tagsInput
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean) ?? [];
-      // Store due dates at UTC midnight to keep calendar math consistent across timezones.
-      // If we stored local time, a due date of "Jan 15" in Tokyo (UTC+9) would
-      // serialize to "Jan 14 15:00 UTC" and display as "Jan 14" in Los Angeles (UTC-8).
-      // Using UTC midnight ("Jan 15 00:00 UTC") ensures "Jan 15" displays everywhere.
-      const dueDateIso = dueDate ? new Date(`${dueDate}T00:00:00.000Z`).toISOString() : undefined;
+    if (!form.title.trim()) return;
+    const tags = form.tags
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
 
-      await createTask({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        status,
-        priority,
-        tags: tags.length > 0 ? tags : undefined,
-        dueDate: dueDateIso,
-      });
-      closeModal();
-    } catch (error) {
-      console.error(error);
-      setFormError("Errore nel salvataggio. Riprova.");
-    } finally {
-      setIsSaving(false);
-    }
+    const created = await create.run(
+      () =>
+        createTask({
+          title: form.title.trim(),
+          description: form.description.trim() || undefined,
+          status: form.status,
+          priority: form.priority || undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          // Already a YYYY-MM-DD day key: no conversion, so nothing to get wrong.
+          dueDate: form.dueDate || undefined,
+        }),
+      "Non sono riuscito a creare il task.",
+    );
+    if (created) closeCreate();
   };
+
+  const handleDelete = async () => {
+    if (!pendingDelete) return;
+    const deleted = await remove.run(
+      () => deleteTask(pendingDelete.id),
+      "Non sono riuscito a eliminare il task.",
+    );
+    if (deleted) setPendingDelete(null);
+  };
+
+  const stepsUnder = pendingDelete
+    ? getTaskStepSummary(stepsByTask, pendingDelete.id).total
+    : 0;
+  const logsUnder = pendingDelete
+    ? workLogs.filter((log) => log.taskId === pendingDelete.id).length
+    : 0;
 
   return (
-    <AuthGate>
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-col gap-3">
-          <Link
-            href="/"
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-sm text-slate-600 transition hover:border-slate-400"
-          >
-            ← Torna alla Home
-          </Link>
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Chronostep
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">Tasks</h1>
-          <p className="text-sm text-slate-500">
-            Track everything you are working on in one list.
-          </p>
-        </div>
-        <button
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-          onClick={openModal}
-        >
-          + New Task
-        </button>
-      </header>
+    <AppShell>
+      <main className="mx-auto w-full max-w-6xl px-6 py-10">
+        {loadError ? (
+          <div className="mb-8">
+            <ErrorNote onRetry={() => void refresh()}>
+              Non sono riuscito a leggere i tuoi task, quindi la lista potrebbe non essere aggiornata.
+            </ErrorNote>
+          </div>
+        ) : null}
 
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          className="w-full rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 sm:max-w-xs"
-          placeholder="Cerca task..."
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-        />
-        <div className="flex flex-wrap gap-2">
-          {STATUS_FILTERS.map((filter) => (
-            <button
-              key={filter.value}
-              type="button"
-              onClick={() => setStatusFilter(filter.value)}
-              className={`rounded-full border px-3 py-1 text-sm font-medium transition ${
-                statusFilter === filter.value
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </section>
+        {!isHydrated ? (
+          <p className="font-mono text-tiny uppercase tracking-wider text-ink-muted">Leggo i dati…</p>
+        ) : (
+          <>
+            <Verdict verdict={verdict}>
+              <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+                Nuovo task
+              </Button>
+            </Verdict>
 
-      {!isHydrated ? (
-        <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-          Caricamento dati…
-        </div>
-      ) : (
-        <section className="grid gap-4 md:grid-cols-2">
-          {filteredTasks.map((task) => {
-            const stepData = stepsByTask.get(task.id) ?? { total: 0, done: 0 };
-            return (
-              <TaskCard
-                key={task.id}
-                task={task}
-                totalSteps={stepData.total}
-                completedSteps={stepData.done}
-                onDelete={(id) => {
-                  if (confirm("Sei sicuro di voler eliminare questo task?")) {
-                    void deleteTask(id);
-                  }
-                }}
-              />
-            );
-          })}
-
-          {filteredTasks.length === 0 ? (
-            <div className="col-span-full rounded-xl border border-dashed border-slate-300 p-6 text-center text-slate-500">
-              {searchQuery.trim()
-                ? "Nessun task corrisponde alla ricerca."
-                : "Nessun task corrisponde al filtro selezionato."}
-            </div>
-          ) : null}
-        </section>
-      )}
-
-      {isModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-8">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Nuovo Task</p>
-                <h2 className="text-2xl font-semibold text-slate-900">Crea un task</h2>
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <div className="min-w-[14rem] flex-1">
+                <label htmlFor="ricerca-task" className="sr-only">
+                  Cerca fra i task
+                </label>
+                <TextInput
+                  id="ricerca-task"
+                  type="search"
+                  placeholder="Cerca per titolo, descrizione o tag"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
               </div>
-              <button
-                className="text-slate-500 transition hover:text-slate-900"
-                onClick={closeModal}
+              <div role="group" aria-label="Filtra per stato" className="flex flex-wrap gap-x-4 gap-y-2">
+                {STATUS_FILTERS.map((filter) => {
+                  const active = statusFilter === filter.value;
+                  return (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setStatusFilter(filter.value)}
+                      className={`border-b-2 py-1 font-mono text-tiny transition-colors ${
+                        active
+                          ? "border-ink font-medium text-ink"
+                          : "border-transparent text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {visibleTasks.length > 0 ? (
+              <ul className="mt-8 border-t border-line">
+                {visibleTasks.map((task) => {
+                  const progress = getTaskStepSummary(stepsByTask, task.id);
+                  const minutes = taskActivity.get(task.id)?.totalMinutes ?? 0;
+                  return (
+                    <li
+                      key={task.id}
+                      className="group flex flex-col gap-2 border-b border-line py-4 sm:flex-row sm:items-baseline sm:gap-x-4"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          href={`/tasks/${task.id}`}
+                          className="font-prose text-lead text-ink no-underline hover:underline"
+                        >
+                          {task.title}
+                        </Link>
+                        {task.description ? (
+                          <p className="mt-1 max-w-measure font-prose text-base text-ink-muted">
+                            {task.description}
+                          </p>
+                        ) : null}
+                        {task.tags?.length ? (
+                          <div className="mt-1.5">
+                            <TagList tags={task.tags} limit={4} />
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex shrink-0 items-baseline gap-4">
+                        <StatusChip status={task.status} />
+
+                        {/* A task with no steps prints nothing here rather than a hollow "0/0". */}
+                        <span data-numeric className="w-14 text-right font-mono text-tiny text-ink-muted">
+                          {progress.total > 0 ? `${progress.done}/${progress.total}` : ""}
+                        </span>
+                        <span data-numeric className="w-16 text-right font-mono text-tiny text-ink-muted">
+                          {minutes > 0 ? formatMinutes(minutes) : ""}
+                        </span>
+                        <span data-numeric className="w-20 text-right font-mono text-tiny text-ink-muted">
+                          {task.dueDate
+                            ? formatDueDate(task.dueDate, { day: "numeric", month: "short" })
+                            : ""}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(task)}
+                          className="font-mono text-tiny text-ink-muted underline underline-offset-4 transition-opacity hover:text-bad focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                        >
+                          Elimina
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </>
+        )}
+
+        <Dialog
+          open={isCreateOpen}
+          title="Nuovo task"
+          description="Il titolo basta. Tutto il resto è facoltativo."
+          hasUnsavedChanges={formIsDirty}
+          onClose={closeCreate}
+          footer={
+            <>
+              <Button variant="quiet" onClick={closeCreate} disabled={create.pending}>
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                form="form-nuovo-task"
+                variant="primary"
+                pending={create.pending}
+                pendingLabel="Salvo…"
               >
-                ✕
-              </button>
-            </div>
+                Crea task
+              </Button>
+            </>
+          }
+        >
+          <form id="form-nuovo-task" onSubmit={handleCreate} className="flex flex-col gap-5">
+            {create.error ? <ErrorNote>{create.error}</ErrorNote> : null}
 
-            <form className="mt-6 space-y-4" onSubmit={handleCreateTask}>
-              {escWarning ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  {escWarning}
-                </p>
-              ) : null}
-              <div>
-                <label className="text-sm font-medium text-slate-700">Titolo *</label>
-                <input
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Es. Setup progetto"
+            <Field label="Titolo" required>
+              {(props) => (
+                <TextInput
+                  {...props}
+                  value={form.title}
+                  onChange={(event) => setForm({ ...form, title: event.target.value })}
+                  placeholder="Mandare il preventivo a Rossi"
                   required
+                  autoFocus
                 />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Descrizione</label>
-                <textarea
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  rows={3}
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Dettagli sul task"
-                />
-              </div>
+              )}
+            </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Status</label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={status}
-                    onChange={(event) => setStatus(event.target.value as TaskStatus)}
+            <Field label="Descrizione">
+              {(props) => (
+                <TextArea
+                  {...props}
+                  rows={3}
+                  value={form.description}
+                  onChange={(event) => setForm({ ...form, description: event.target.value })}
+                />
+              )}
+            </Field>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field label="Stato">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={form.status}
+                    onChange={(event) => setForm({ ...form, status: event.target.value as TaskStatus })}
                   >
-                    {TASK_STATUSES.map((value) => (
-                      <option key={value} value={value}>
-                        {value.replace("_", " ")}
+                    {TASK_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {TASK_STATUS_LABELS[status]}
                       </option>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Priority</label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={priority ?? ""}
+                  </Select>
+                )}
+              </Field>
+
+              <Field label="Priorità">
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={form.priority}
                     onChange={(event) =>
-                      setPriority(event.target.value ? (event.target.value as Task["priority"]) : undefined)
+                      setForm({ ...form, priority: event.target.value as typeof form.priority })
                     }
                   >
                     <option value="">Nessuna</option>
-                    {TASK_PRIORITIES.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
+                    {PRIORITIES.map((priority) => (
+                      <option key={priority.value} value={priority.value}>
+                        {priority.label}
                       </option>
                     ))}
-                  </select>
-                </div>
-              </div>
+                  </Select>
+                )}
+              </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Due date</label>
-                  <input
-                    type="date"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
+              <Field label="Scadenza">
+                {(props) => (
+                  <DateInput
+                    {...props}
+                    value={form.dueDate}
+                    onChange={(event) => setForm({ ...form, dueDate: event.target.value })}
                   />
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Tags (comma)</label>
-                  <input
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="setup,backend"
-                    value={tagsInput}
-                    onChange={(event) => setTagsInput(event.target.value)}
+                )}
+              </Field>
+
+              <Field label="Tag" hint="Separati da virgola.">
+                {(props) => (
+                  <TextInput
+                    {...props}
+                    value={form.tags}
+                    onChange={(event) => setForm({ ...form, tags: event.target.value })}
+                    placeholder="cliente, preventivo"
                   />
-                </div>
-              </div>
+                )}
+              </Field>
+            </div>
+          </form>
+        </Dialog>
 
-              {formError ? <p className="text-sm text-rose-600">{formError}</p> : null}
-
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                  onClick={closeModal}
-                  disabled={isSaving}
-                >
-                  Annulla
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                  disabled={isSaving}
-                >
-                  {isSaving ? "Salvataggio..." : "Crea Task"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-    </main>
-    </AuthGate>
+        <Dialog
+          open={pendingDelete !== null}
+          title="Eliminare questo task?"
+          onClose={() => {
+            setPendingDelete(null);
+            remove.clearError();
+          }}
+          footer={
+            <>
+              <Button variant="quiet" onClick={() => setPendingDelete(null)} disabled={remove.pending}>
+                Annulla
+              </Button>
+              <Button variant="danger" onClick={handleDelete} pending={remove.pending} pendingLabel="Elimino…">
+                Elimina definitivamente
+              </Button>
+            </>
+          }
+        >
+          {remove.error ? <ErrorNote>{remove.error}</ErrorNote> : null}
+          <p className="font-prose text-prose text-ink">
+            «{pendingDelete?.title}» sparisce, e con lui{" "}
+            <span data-numeric className="font-mono">
+              {stepsUnder}
+            </span>{" "}
+            {stepsUnder === 1 ? "step" : "step"} e{" "}
+            <span data-numeric className="font-mono">
+              {logsUnder}
+            </span>{" "}
+            {logsUnder === 1 ? "voce di work log" : "voci di work log"}.
+          </p>
+          <p className="mt-3 font-prose text-base text-ink-muted">
+            Il tempo registrato su questo task non è recuperabile: non finisce in un cestino.
+          </p>
+        </Dialog>
+      </main>
+    </AppShell>
   );
 };
 
