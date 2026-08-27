@@ -3,6 +3,9 @@
 > **Audience**: Developers and AI agents working on ChronoStep
 > **Setup**: [SETUP.md](./SETUP.md) · **Product truth**: [PRODUCT.md](./PRODUCT.md) · **Visual system**: [DESIGN.md](./DESIGN.md)
 > **Conventions**: [AGENTS.md](./AGENTS.md) · [COMMENTS.md](./COMMENTS.md) · [DEVELOPMENT_GUIDELINES.md](./DEVELOPMENT_GUIDELINES.md)
+> **Session workflow**: read [WORKFLOW.md](./WORKFLOW.md) before starting any work — commit/branch
+> approval rules and the guided manual-testing protocol. A new rule from the user goes there, in
+> that session's commit, not here.
 
 Detailed technical information: architecture, the decisions that are load-bearing, and the traps
 that have already caught someone. Keep it concise and actionable.

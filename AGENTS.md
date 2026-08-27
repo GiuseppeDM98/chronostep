@@ -3,7 +3,9 @@
 ChronoStep project notes for coding agents. Keep changes aligned with existing patterns and keep
 output actionable. Read [CLAUDE.md](./CLAUDE.md) for architecture, [PRODUCT.md](./PRODUCT.md) for
 product truth, [DESIGN.md](./DESIGN.md) before touching UI, and [COMMENTS.md](./COMMENTS.md) plus
-[DEVELOPMENT_GUIDELINES.md](./DEVELOPMENT_GUIDELINES.md) while writing code.
+[DEVELOPMENT_GUIDELINES.md](./DEVELOPMENT_GUIDELINES.md) while writing code. Read
+[WORKFLOW.md](./WORKFLOW.md) before starting a session — commit/branch approval rules and the
+guided manual-testing protocol.
 
 ## Project snapshot
 - Next.js 16 App Router, TypeScript, Tailwind 3 bound to CSS custom properties.
